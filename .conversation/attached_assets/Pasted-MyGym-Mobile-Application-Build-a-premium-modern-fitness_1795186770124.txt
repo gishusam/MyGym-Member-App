@@ -1,0 +1,84 @@
+MyGym – Mobile Application
+
+Build a premium, modern fitness membership mobile application called MyGym using React Native, Expo and TypeScript.
+
+This application is the member-facing mobile companion to an existing gym management platform. The owner, receptionist and trainer dashboards already exist.
+
+Objective
+
+Create a beautiful and intuitive mobile experience for gym members to manage their memberships and track their fitness journeys.
+
+Main navigation
+
+1. Home
+2. Workouts
+3. Progress
+4. Profile
+5. A prominent central QR Check-in action.
+
+Home screen
+
+Include:
+
+- Personalized greeting.
+- Membership status card and expiry date.
+- Consistency streak with a flame indicator.
+- Weekly gym attendance.
+- Today's assigned workout.
+- Fitness progress summary.
+
+Workouts
+
+- Weekly workout schedule.
+- Assigned workout templates.
+- Exercise lists with sets and repetitions.
+- Ability to record weights and completed repetitions.
+- Workout completion tracking.
+
+Progress
+
+- Body weight history.
+- Body measurements.
+- Progress charts.
+- Fitness milestones.
+
+Check-in
+
+- QR code display.
+- Membership validity indicator.
+- Check-in confirmation screen.
+
+Profile
+
+- Personal details.
+- Membership information.
+- Payment history.
+- Account settings.
+
+Design direction
+
+Use a premium fitness aesthetic:
+
+- Forest green as the primary brand colour.
+- Clean white and soft neutral backgrounds.
+- Modern typography.
+- Rounded cards and subtle shadows.
+- Beautiful data visualizations.
+- Smooth transitions and polished interactions.
+
+Avoid generic dashboard designs. The application should feel like a professionally designed fitness product.
+
+Technical requirements
+
+- React Native with Expo.
+- TypeScript.
+- Expo Router.
+- Reusable components.
+- Organized feature-based architecture.
+- Responsive layouts for Android and iOS.
+
+For now, use realistic mock data to demonstrate the complete user experience.
+
+Do not create a replacement backend or database. Do not hardcode invented API endpoints. Keep the application architecture ready to integrate with our existing FastAPI backend later.
+
+Build the application incrementally, starting with the design system, navigation and home screen. Ensure the application runs before proceeding to additional features.
