@@ -32,7 +32,7 @@ export default function ProfileScreen() {
       contentContainerStyle={[styles.content, { paddingTop: topInset + 20 }]}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.eyebrow, { color: colors.forestMid }]}>YOUR MEMBERSHIP</Text>
+      <Text style={[styles.eyebrow, { color: colors.accentForeground }]}>YOUR MEMBERSHIP</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Profile</Text>
 
       <View style={[styles.identityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -61,7 +61,7 @@ export default function ProfileScreen() {
 
       <View style={styles.sectionHeading}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Membership</Text>
-        <Feather name="hexagon" size={16} color={colors.forestMid} />
+        <Feather name="hexagon" size={16} color={colors.accentForeground} />
       </View>
       <View style={[styles.membershipCard, { backgroundColor: colors.forestDeep }]}>
         <View style={styles.membershipTop}>
@@ -93,7 +93,7 @@ export default function ProfileScreen() {
         {payments.map((payment, index) => (
           <View key={payment.title} style={[styles.paymentRow, index < payments.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
             <View style={[styles.paymentIcon, { backgroundColor: colors.muted }]}>
-              <Feather name={payment.icon} size={15} color={colors.forestMid} />
+              <Feather name={payment.icon} size={15} color={colors.accentForeground} />
             </View>
             <View style={styles.paymentCopy}>
               <Text style={[styles.paymentTitle, { color: colors.foreground }]}>{payment.title}</Text>

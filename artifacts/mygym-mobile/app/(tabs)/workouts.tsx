@@ -184,7 +184,7 @@ export default function WorkoutsScreen() {
     >
       <View style={styles.header}>
         <View>
-          <Text style={[styles.eyebrow, { color: colors.forestMid }]}>YOUR TRAINING</Text>
+          <Text style={[styles.eyebrow, { color: colors.accentForeground }]}>YOUR TRAINING</Text>
           <Text style={[styles.title, { color: colors.foreground }]}>Workouts</Text>
         </View>
         <View style={[styles.logBadge, { backgroundColor: colors.accent }]}>
@@ -214,7 +214,7 @@ export default function WorkoutsScreen() {
               onPress={() => { triggerHaptic(); setSelectedDay(index); }}
               style={({ pressed }) => [
                 styles.dayButton,
-                selected && { backgroundColor: colors.primary },
+                 selected && { backgroundColor: colors.forestMid },
                 pressed && { opacity: 0.75 },
               ]}
             >
@@ -226,23 +226,29 @@ export default function WorkoutsScreen() {
         })}
       </View>
 
-      <View style={styles.sessionHeading}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.sectionOverline, { color: colors.forestMid }]}>{activeDay.day}, {activeDay.month} {activeDay.date.getDate()} · {activeDay.focus.toUpperCase()}</Text>
-          <Text style={[styles.sessionTitle, { color: colors.foreground }]}>{activeDay.title}</Text>
+      <View style={[styles.sessionHeading, { backgroundColor: colors.accent }]}>
+        <View style={styles.sessionTop}>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.sectionOverline, { color: colors.gold }]}>{activeDay.day}, {activeDay.month} {activeDay.date.getDate()} · {activeDay.focus.toUpperCase()}</Text>
+            <Text style={[styles.sessionTitle, { color: colors.foreground }]}>{activeDay.title}</Text>
+            <Text style={[styles.heroCopy, { color: colors.secondaryForeground }]}>
+              {isTrainingDay ? `${activeDay.exercises.length} movements · ${completedCount} completed` : `${activeDay.focus} · ${activeDay.duration}`}
+            </Text>
+          </View>
+          <View style={[styles.durationBadge, { backgroundColor: colors.card }]}>
+            <Feather name="clock" size={13} color={colors.gold} />
+            <Text style={[styles.durationText, { color: colors.foreground }]}>{activeDay.duration}</Text>
+          </View>
         </View>
-        <View style={[styles.durationBadge, { backgroundColor: colors.warm }]}>
-          <Feather name="clock" size={13} color={colors.gold} />
-          <Text style={[styles.durationText, { color: colors.foreground }]}>{activeDay.duration}</Text>
-        </View>
+        {isTrainingDay && (
+          <View style={[styles.progressLine, { backgroundColor: colors.card }]}>
+            <View style={[styles.progressFill, { backgroundColor: colors.forestMid, width: `${(completedCount / activeDay.exercises.length) * 100}%` }]} />
+          </View>
+        )}
       </View>
 
       {isTrainingDay ? (
         <>
-          <View style={[styles.progressLine, { backgroundColor: colors.border }]}>
-            <View style={[styles.progressFill, { backgroundColor: colors.forestMid, width: `${(completedCount / activeDay.exercises.length) * 100}%` }]} />
-          </View>
-          <Text style={[styles.completionText, { color: colors.mutedForeground }]}>{completedCount} of {activeDay.exercises.length} exercises complete</Text>
           <View style={styles.exerciseList}>
             {activeDay.exercises.map((exercise, index) => {
               const done = Boolean(entryState[exercise.id]?.completed);
@@ -375,7 +381,7 @@ export default function WorkoutsScreen() {
                 <Text style={[styles.historyTitle, { color: colors.foreground }]}>{log.workout}</Text>
                 <Text style={[styles.historyDate, { color: colors.mutedForeground }]}>{new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(`${log.date}T12:00:00`))} · {log.exercises.filter((item) => item.completed).length} exercises</Text>
               </View>
-              <Text style={[styles.historyComplete, { color: colors.forestMid }]}>{log.exercises.every((item) => item.completed) ? 'DONE' : 'IN PROGRESS'}</Text>
+              <Text style={[styles.historyComplete, { color: colors.accentForeground }]}>{log.exercises.every((item) => item.completed) ? 'DONE' : 'IN PROGRESS'}</Text>
             </View>
           ))}
         </View>
@@ -402,9 +408,11 @@ const styles = StyleSheet.create({
   dayName: { fontSize: 8, fontWeight: '700', letterSpacing: 0.4 },
   dayDate: { fontSize: 14, fontWeight: '700', marginTop: 5 },
   dayIndicator: { width: 4, height: 4, borderRadius: 2, marginTop: 5 },
-  sessionHeading: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 27, marginBottom: 16 },
+  sessionHeading: { borderRadius: 20, padding: 15, marginTop: 23, marginBottom: 16 },
+  sessionTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionOverline: { fontSize: 8, letterSpacing: 1, fontWeight: '700', marginBottom: 5 },
   sessionTitle: { fontSize: 20, letterSpacing: -0.45, fontWeight: '700' },
+  heroCopy: { fontSize: 9, marginTop: 5 },
   durationBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 11, paddingHorizontal: 9, paddingVertical: 7 },
   durationText: { fontSize: 9, fontWeight: '600' },
   progressLine: { height: 5, borderRadius: 3, overflow: 'hidden' },

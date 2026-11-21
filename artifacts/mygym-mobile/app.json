@@ -9,7 +9,7 @@
     "userInterfaceStyle": "automatic",
     "splash": {
       "image": "./assets/images/icon_2.png",
-      "backgroundColor": "#F1F5EF",
+      "backgroundColor": "#EAF3FB",
       "imageWidth": 160
     },
     "ios": {

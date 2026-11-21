@@ -1,5 +1,6 @@
 import React from 'react';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import QRCode from 'react-native-qrcode-svg';
 import { useRouter } from 'expo-router';
 import {
   Platform,
@@ -21,12 +22,29 @@ const week = [
   { day: 'S', attended: false },
   { day: 'S', attended: false },
 ];
+const DEMO_MEMBER_TOKEN = 'MYGYM-DEMO-MG-2048-731-2027';
+
+function getNextCommunityRunDate() {
+  const now = new Date();
+  const daysUntilSaturday = (6 - now.getDay() + 7) % 7;
+  const eventDate = new Date(now);
+  eventDate.setDate(now.getDate() + daysUntilSaturday);
+  eventDate.setHours(7, 30, 0, 0);
+  if (eventDate <= now) eventDate.setDate(eventDate.getDate() + 7);
+  return eventDate;
+}
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
+  const nextEventDate = getNextCommunityRunDate();
+  const nextEventDateLabel = new Intl.DateTimeFormat('en-GB', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  }).format(nextEventDate).toUpperCase();
   const todayLabel = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -44,7 +62,7 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.kicker, { color: colors.mutedForeground }]}>{todayLabel}</Text>
-          <Text style={[styles.greeting, { color: colors.foreground }]}>Good morning, Alex</Text>
+          <Text style={[styles.greeting, { color: colors.foreground }]}>Hi, Alex</Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Ready to make today count?</Text>
         </View>
         <Pressable
@@ -62,58 +80,49 @@ export default function HomeScreen() {
         </Pressable>
       </View>
 
-      <View style={[styles.membershipCard, { backgroundColor: colors.forestDeep }]}>
-        <View style={styles.membershipTop}>
-          <View
-            style={[
-              styles.brandMark,
-              { backgroundColor: colors.forestOverlay },
-            ]}
-          >
-            <Feather name="hexagon" size={17} color={colors.lime} />
-          </View>
-          <View
-            style={[
-              styles.memberPill,
-              { backgroundColor: colors.forestPill },
-            ]}
-          >
-            <View style={[styles.memberDot, { backgroundColor: colors.lime }]} />
-            <Text style={[styles.memberPillText, { color: colors.forestMuted }]}>
-              ACTIVE MEMBER
-            </Text>
-          </View>
+      <View style={styles.memberStatus}>
+        <View style={[styles.memberStatusIcon, { backgroundColor: colors.secondary }]}>
+          <Feather name="hexagon" size={14} color={colors.primary} />
         </View>
-        <Text style={[styles.membershipName, { color: colors.forestText }]}>
-          Founders Club
-        </Text>
-        <View style={styles.membershipBottom}>
-          <View>
-            <Text style={[styles.memberCaption, { color: colors.forestCaption }]}>
-              MEMBER SINCE
-            </Text>
-            <Text style={[styles.memberValue, { color: colors.forestText }]}>
-              September 2023
-            </Text>
-          </View>
-          <View style={styles.expiryBlock}>
-            <Text style={[styles.memberCaption, { color: colors.forestCaption }]}>
-              EXPIRES
-            </Text>
-            <Text style={[styles.memberValue, { color: colors.forestText }]}>
-              30 Sep 2027
-            </Text>
-          </View>
+        <View style={styles.memberStatusCopy}>
+          <Text style={[styles.memberStatusName, { color: colors.foreground }]}>Founders Club</Text>
+          <Text style={[styles.memberStatusMeta, { color: colors.mutedForeground }]}>Member since September 2023</Text>
         </View>
-        <View
-          pointerEvents="none"
-          style={[styles.cardOrbitOne, { borderColor: colors.forestRingSoft }]}
-        />
-        <View
-          pointerEvents="none"
-          style={[styles.cardOrbitTwo, { borderColor: colors.forestRingFaint }]}
-        />
+        <View style={[styles.activePill, { backgroundColor: colors.accent }]}>
+          <View style={[styles.memberDot, { backgroundColor: colors.forestMid }]} />
+          <Text style={[styles.activePillText, { color: colors.accentForeground }]}>ACTIVE</Text>
+        </View>
       </View>
+
+      <Pressable
+        testID="home-checkin-card"
+        accessibilityRole="button"
+        accessibilityLabel="Open your demo member pass for check-in"
+        onPress={() => router.navigate('/member-qr')}
+        style={({ pressed }) => [
+          styles.checkinCard,
+          { backgroundColor: colors.forestDeep, opacity: pressed ? 0.86 : 1 },
+        ]}
+      >
+        <View style={styles.checkinCopy}>
+          <Text style={[styles.checkinOverline, { color: colors.forestCaption }]}>MEMBER PASS · DEMO</Text>
+          <Text style={[styles.checkinTitle, { color: colors.forestText }]}>Check in at the front desk</Text>
+          <Text style={[styles.checkinSub, { color: colors.forestMuted }]}>Your sample QR is ready to show.</Text>
+          <View style={[styles.checkinAction, { backgroundColor: colors.forestMid }]}>
+            <MaterialCommunityIcons name="qrcode-scan" size={13} color={colors.primaryForeground} />
+            <Text style={[styles.checkinActionText, { color: colors.primaryForeground }]}>SHOW QR</Text>
+          </View>
+        </View>
+        <View style={[styles.homeQrTile, { backgroundColor: colors.card }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+          <QRCode
+            value={DEMO_MEMBER_TOKEN}
+            size={58}
+            color={colors.forestDeep}
+            backgroundColor={colors.card}
+            quietZone={3}
+          />
+        </View>
+      </Pressable>
 
       <View style={styles.sectionHeading}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your rhythm</Text>
@@ -211,12 +220,12 @@ export default function HomeScreen() {
           <View style={[styles.artCore, { backgroundColor: colors.forestMid }]}>
             <Feather name="activity" size={21} color={colors.primaryForeground} />
           </View>
-          <Text style={[styles.artNo, { color: colors.forestMid }]}>01 / 04</Text>
+            <Text style={[styles.artNo, { color: colors.accentForeground }]}>01 / 04</Text>
         </View>
         <View style={styles.workoutDetails}>
           <View style={styles.workoutEyebrow}>
             <View style={[styles.todayDot, { backgroundColor: colors.forestMid }]} />
-            <Text style={[styles.todayLabel, { color: colors.forestMid }]}>TODAY'S SESSION</Text>
+            <Text style={[styles.todayLabel, { color: colors.accentForeground }]}>TODAY'S SESSION</Text>
           </View>
           <Text style={[styles.workoutTitle, { color: colors.foreground }]}>Strength foundations</Text>
           <Text style={[styles.workoutMeta, { color: colors.mutedForeground }]}>Upper body · 45 min</Text>
@@ -226,6 +235,30 @@ export default function HomeScreen() {
               <Feather name="arrow-up-right" size={15} color={colors.primaryForeground} />
             </View>
           </View>
+        </View>
+      </Pressable>
+
+      <Pressable
+        testID="next-event-preview"
+        accessibilityRole="button"
+        accessibilityLabel={`Open Events for Community 5K run, ${nextEventDateLabel} at 7:30 AM`}
+        onPress={() => router.navigate('/events')}
+        style={({ pressed }) => [
+          styles.nextEventCard,
+          { backgroundColor: colors.card, borderColor: colors.border, opacity: pressed ? 0.78 : 1 },
+        ]}
+      >
+        <View style={[styles.nextEventDate, { backgroundColor: colors.accent }]}>
+          <Feather name="navigation" size={14} color={colors.accentForeground} />
+          <Text style={[styles.nextEventDateText, { color: colors.accentForeground }]}>{nextEventDateLabel}</Text>
+        </View>
+        <View style={styles.nextEventCopy}>
+          <Text style={[styles.nextEventEyebrow, { color: colors.accentForeground }]}>NEXT EVENT</Text>
+          <Text style={[styles.nextEventTitle, { color: colors.foreground }]}>Community 5K run</Text>
+          <Text style={[styles.nextEventMeta, { color: colors.mutedForeground }]}>7:30 AM · Marina Green</Text>
+        </View>
+        <View style={[styles.nextEventArrow, { backgroundColor: colors.primary }]}>
+          <Feather name="arrow-up-right" size={14} color={colors.primaryForeground} />
         </View>
       </Pressable>
 
@@ -252,9 +285,9 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.progressCopy}>
-          <Text style={[styles.progressMetric, { color: colors.foreground }]}>+8.4<Text style={[styles.progressPercent, { color: colors.forestMid }]}>%</Text></Text>
+          <Text style={[styles.progressMetric, { color: colors.foreground }]}>+8.4<Text style={[styles.progressPercent, { color: colors.accentForeground }]}>%</Text></Text>
           <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>strength this month</Text>
-          <Text style={[styles.progressNote, { color: colors.forestMid }]}>Moving in the right direction</Text>
+          <Text style={[styles.progressNote, { color: colors.accentForeground }]}>Moving in the right direction</Text>
         </View>
         <View style={styles.chart} accessibilityLabel="Strength trend rising over four weeks">
           {[30, 43, 38, 58, 54, 70, 65, 88].map((height, index) => (
@@ -274,7 +307,7 @@ export default function HomeScreen() {
         <View style={[styles.progressDivider, { backgroundColor: colors.border }]} />
         <View style={styles.progressFooter}>
           <Text style={[styles.progressFooterText, { color: colors.mutedForeground }]}>BENCH PRESS</Text>
-          <Text style={[styles.progressFooterValue, { color: colors.foreground }]}>52.5 kg <Text style={{ color: colors.forestMid }}>↑ 2.5 kg</Text></Text>
+          <Text style={[styles.progressFooterValue, { color: colors.foreground }]}>52.5 kg <Text style={{ color: colors.accentForeground }}>↑ 2.5 kg</Text></Text>
         </View>
       </View>
       <View style={{ height: 112 }} />
@@ -285,26 +318,29 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { paddingHorizontal: 22, paddingBottom: 26 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 23 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
   kicker: { fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginBottom: 7 },
   greeting: { fontSize: 25, fontWeight: '700', letterSpacing: -0.7 },
   subtitle: { fontSize: 13, marginTop: 5 },
   avatar: { width: 46, height: 46, borderRadius: 17, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '700', letterSpacing: 0.4 },
   onlineDot: { position: 'absolute', width: 11, height: 11, borderRadius: 6, right: -1, bottom: -1, borderWidth: 2 },
-  membershipCard: { borderRadius: 24, padding: 21, minHeight: 171, marginBottom: 27, overflow: 'hidden' },
-  membershipTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  brandMark: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
-  memberPill: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12 },
+  memberStatus: { minHeight: 45, flexDirection: 'row', alignItems: 'center', gap: 9, marginBottom: 13 },
+  memberStatusIcon: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  memberStatusCopy: { flex: 1 },
+  memberStatusName: { fontSize: 11, fontWeight: '700' },
+  memberStatusMeta: { fontSize: 8, marginTop: 3 },
+  activePill: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 9, paddingHorizontal: 8, paddingVertical: 6 },
+  activePillText: { fontSize: 7, letterSpacing: 0.5, fontWeight: '700' },
+  checkinCard: { borderRadius: 20, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 13, marginBottom: 26, overflow: 'hidden' },
+  checkinCopy: { flex: 1 },
+  checkinOverline: { fontSize: 7, letterSpacing: 1, fontWeight: '700', marginBottom: 6 },
+  checkinTitle: { fontSize: 13, fontWeight: '700' },
+  checkinSub: { fontSize: 9, marginTop: 4 },
+  checkinAction: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 8, marginTop: 11 },
+  checkinActionText: { fontSize: 8, fontWeight: '700', letterSpacing: 0.6 },
+  homeQrTile: { width: 68, height: 68, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   memberDot: { width: 6, height: 6, borderRadius: 4 },
-  memberPillText: { fontSize: 8, letterSpacing: 1, fontWeight: '700' },
-  membershipName: { fontSize: 20, fontWeight: '600', marginTop: 12, letterSpacing: 0.1 },
-  membershipBottom: { flexDirection: 'row', marginTop: 15 },
-  expiryBlock: { marginLeft: 36 },
-  memberCaption: { fontSize: 8, letterSpacing: 1.2, fontWeight: '700', marginBottom: 5 },
-  memberValue: { fontSize: 11, fontWeight: '500' },
-  cardOrbitOne: { position: 'absolute', width: 178, height: 178, borderRadius: 100, borderWidth: 1, right: -44, top: 23 },
-  cardOrbitTwo: { position: 'absolute', width: 130, height: 130, borderRadius: 70, borderWidth: 1, right: -17, top: 48 },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 13 },
   sectionTitle: { fontSize: 18, letterSpacing: -0.35, fontWeight: '700' },
   sectionMeta: { fontSize: 9, fontWeight: '700', letterSpacing: 1.1 },
@@ -339,6 +375,14 @@ const styles = StyleSheet.create({
   workoutBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto' },
   levelText: { fontSize: 8, letterSpacing: 1, fontWeight: '700' },
   roundArrow: { width: 29, height: 29, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  nextEventCard: { minHeight: 74, borderWidth: 1, borderRadius: 17, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: -12, marginBottom: 25 },
+  nextEventDate: { width: 54, height: 52, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  nextEventDateText: { fontSize: 7, letterSpacing: 0.2, fontWeight: '700' },
+  nextEventCopy: { flex: 1 },
+  nextEventEyebrow: { fontSize: 7, letterSpacing: 0.9, fontWeight: '700', marginBottom: 4 },
+  nextEventTitle: { fontSize: 11, fontWeight: '700' },
+  nextEventMeta: { fontSize: 8, marginTop: 4 },
+  nextEventArrow: { width: 27, height: 27, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   progressCard: { borderWidth: 1, borderRadius: 20, padding: 16, shadowOpacity: 0.035, shadowRadius: 10, shadowOffset: { width: 0, height: 4 }, elevation: 1 },
   progressCopy: { paddingBottom: 10 },
   progressMetric: { fontSize: 28, fontWeight: '700', letterSpacing: -0.8 },

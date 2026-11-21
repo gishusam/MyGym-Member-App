@@ -45,9 +45,56 @@ export default function ProgressScreen() {
       contentContainerStyle={[styles.content, { paddingTop: topInset + 20 }]}
       showsVerticalScrollIndicator={false}
     >
-      <Text style={[styles.eyebrow, { color: colors.forestMid }]}>SMALL WINS ADD UP</Text>
+      <Text style={[styles.eyebrow, { color: colors.accentForeground }]}>SMALL WINS ADD UP</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Progress</Text>
       <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>A steady look at where your effort is taking you.</Text>
+
+      <View style={[styles.summaryCard, { backgroundColor: colors.forestDeep }]}>
+        <View style={styles.summaryTop}>
+          <View style={styles.summaryCopy}>
+            <Text style={[styles.summaryOverline, { color: colors.forestCaption }]}>YOUR RHYTHM</Text>
+            <Text style={[styles.summaryTitle, { color: colors.forestText }]}>You’re showing up.</Text>
+            <Text style={[styles.summarySub, { color: colors.forestMuted }]}>A little consistency goes a long way.</Text>
+          </View>
+          <View
+            testID="monthly-visits-ring"
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel="12 of 16 monthly visits completed"
+            style={styles.ringWrap}
+          >
+            <Svg width={88} height={88} viewBox="0 0 88 88">
+              <Circle cx="44" cy="44" r="35" fill="none" stroke={colors.forestRing} strokeWidth="7" />
+              <Circle
+                cx="44"
+                cy="44"
+                r="35"
+                fill="none"
+                stroke={colors.forestMid}
+                strokeWidth="7"
+                strokeLinecap="round"
+                strokeDasharray="165 220"
+              />
+            </Svg>
+            <View style={styles.ringCenter}>
+              <Text style={[styles.ringNumber, { color: colors.forestText }]}>12</Text>
+              <Text style={[styles.ringCaption, { color: colors.forestCaption }]}>OF 16</Text>
+            </View>
+          </View>
+        </View>
+        <View style={[styles.summaryRule, { backgroundColor: colors.forestLine }]} />
+        <View style={styles.summaryStats}>
+          <View style={styles.summaryStat}>
+            <Text style={[styles.summaryStatLabel, { color: colors.forestCaption }]}>BODY WEIGHT</Text>
+            <Text style={[styles.summaryStatValue, { color: colors.forestText }]}>76.8 <Text style={[styles.summaryUnit, { color: colors.forestMuted }]}>kg</Text></Text>
+          </View>
+          <View style={[styles.summaryStatDivider, { backgroundColor: colors.forestLine }]} />
+          <View style={styles.summaryStat}>
+            <Text style={[styles.summaryStatLabel, { color: colors.forestCaption }]}>STRENGTH THIS MONTH</Text>
+            <Text style={[styles.summaryStatValue, { color: colors.forestMid }]}>+8.4<Text style={[styles.summaryUnit, { color: colors.forestMid }]}>%</Text></Text>
+          </View>
+        </View>
+      </View>
 
       <View style={[styles.weightCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardTop}>
@@ -182,6 +229,23 @@ const styles = StyleSheet.create({
   eyebrow: { fontSize: 10, letterSpacing: 1.5, fontWeight: '700', marginBottom: 8 },
   title: { fontSize: 31, letterSpacing: -1, fontWeight: '700' },
   subtitle: { fontSize: 13, lineHeight: 19, marginTop: 7, marginBottom: 22, maxWidth: 315 },
+  summaryCard: { borderRadius: 22, padding: 17, marginBottom: 18 },
+  summaryTop: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 },
+  summaryCopy: { flex: 1 },
+  summaryOverline: { fontSize: 8, letterSpacing: 1.1, fontWeight: '700' },
+  summaryTitle: { fontSize: 16, letterSpacing: -0.3, fontWeight: '700', marginTop: 8 },
+  summarySub: { fontSize: 9, lineHeight: 14, marginTop: 5, maxWidth: 165 },
+  ringWrap: { width: 88, height: 88, alignItems: 'center', justifyContent: 'center' },
+  ringCenter: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
+  ringNumber: { fontSize: 22, lineHeight: 24, fontWeight: '700' },
+  ringCaption: { fontSize: 7, letterSpacing: 0.6, fontWeight: '700', marginTop: 1 },
+  summaryRule: { height: 1, marginTop: 13, marginBottom: 12 },
+  summaryStats: { flexDirection: 'row', alignItems: 'center' },
+  summaryStat: { flex: 1 },
+  summaryStatLabel: { fontSize: 7, letterSpacing: 0.7, fontWeight: '700' },
+  summaryStatValue: { fontSize: 15, fontWeight: '700', marginTop: 4 },
+  summaryUnit: { fontSize: 9, fontWeight: '600' },
+  summaryStatDivider: { width: 1, height: 28, marginHorizontal: 13 },
   weightCard: { borderWidth: 1, borderRadius: 22, padding: 16 },
   cardTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   metricLabel: { fontSize: 8, letterSpacing: 1.1, fontWeight: '700' },

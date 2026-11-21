@@ -2,12 +2,11 @@ import React from 'react';
 import {
   Platform,
   StyleSheet,
-  Text,
   View,
   useColorScheme,
 } from 'react-native';
 import { useColors } from '@/hooks/useColors';
-import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import { isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Tabs } from 'expo-router';
@@ -21,22 +20,19 @@ function NativeTabLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: 'house', selected: 'house.fill' }} />
         <NativeTabs.Trigger.Label>Home</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="events">
+        <NativeTabs.Trigger.Icon sf="calendar" />
+        <NativeTabs.Trigger.Label>Events</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="workouts">
         <NativeTabs.Trigger.Icon sf="figure.strengthtraining.traditional" />
-        <NativeTabs.Trigger.Label>Workouts</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="check-in">
-        <NativeTabs.Trigger.Icon sf="qrcode" />
-        <NativeTabs.Trigger.Label>Check-in</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>Plan</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="progress">
         <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" />
         <NativeTabs.Trigger.Label>Progress</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="profile">
-        <NativeTabs.Trigger.Icon sf={{ default: 'person.crop.circle', selected: 'person.crop.circle.fill' }} />
-        <NativeTabs.Trigger.Label>Profile</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="profile" hidden />
     </NativeTabs>
   );
 }
@@ -92,39 +88,17 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
-        name="workouts"
+        name="events"
         options={{
-          title: 'Workouts',
-          tabBarIcon: ({ color }) => <View testID="tab-workouts" style={styles.iconWrap}><Feather name="activity" size={20} color={typeof color === 'string' ? color : colors.primary} /></View>,
+          title: 'Events',
+          tabBarIcon: ({ color }) => <View testID="tab-events" style={styles.iconWrap}><Feather name="calendar" size={19} color={typeof color === 'string' ? color : colors.primary} /></View>,
         }}
       />
       <Tabs.Screen
-        name="check-in"
+        name="workouts"
         options={{
-          title: '',
-          tabBarLabel: () => (
-            <Text style={[styles.checkinLabel, { color: colors.mutedForeground }]}>
-              Check-in
-            </Text>
-          ),
-          tabBarIcon: () => (
-            <View
-              testID="tab-check-in"
-              style={[
-                styles.checkinButton,
-                {
-                  backgroundColor: colors.primary,
-                  borderColor: colors.background,
-                },
-              ]}
-            >
-              <MaterialCommunityIcons
-                name="qrcode-scan"
-                size={22}
-                color={colors.primaryForeground}
-              />
-            </View>
-          ),
+          title: 'Plan',
+          tabBarIcon: ({ color }) => <View testID="tab-workouts" style={styles.iconWrap}><Feather name="activity" size={20} color={typeof color === 'string' ? color : colors.primary} /></View>,
         }}
       />
       <Tabs.Screen
@@ -137,8 +111,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
-          tabBarIcon: ({ color }) => <View testID="tab-profile" style={styles.iconWrap}><Feather name="user" size={20} color={typeof color === 'string' ? color : colors.primary} /></View>,
+          href: null,
         }}
       />
     </Tabs>

@@ -31,7 +31,7 @@ _Populate as you build — non-obvious choices a reader couldn't infer from the 
 
 ## Product
 
-The app is for gym members, not staff. It includes Home, Workouts, QR Check-in, Progress, and Profile experiences using realistic demo data. Workout logs persist on-device; check-in confirmation and profile preferences are local demo states. No member API or replacement database is connected.
+The app is for gym members, not staff. Visible tabs are Home, Events, Plan, and Progress; the demo Member QR opens from Home, and Profile opens from the member avatar. The screens use realistic demo data. Workout logs persist on-device; event sign-ups, check-in confirmation, and profile preferences are local demo states. No member API or replacement database is connected.
 
 ## User preferences
 
