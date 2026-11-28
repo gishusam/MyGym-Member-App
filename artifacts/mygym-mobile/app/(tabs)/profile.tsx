@@ -1,30 +1,40 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Feather } from '@expo/vector-icons';
+import { useAuth } from '@clerk/expo';
+import { useQuery } from '@tanstack/react-query';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { formatMemberApiError, MemberProfile } from '@/lib/member-api';
+import { useMemberApi } from '@/lib/useMemberApi';
 
-const initialPreferences = {
-  classReminders: true,
-  workoutReminders: false,
-  monthlyRecap: true,
-};
+function formatDate(value: string, options: Intl.DateTimeFormatOptions) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Nairobi',
+    ...options,
+  }).format(new Date(value));
+}
 
-const payments = [
-  { title: 'Personal training · 1 session', date: '12 Nov 2026', amount: '$46.00', status: 'PAID', icon: 'activity' as const },
-  { title: 'Recovery class · Drop-in', date: '30 Oct 2026', amount: '$22.00', status: 'PAID', icon: 'heart' as const },
-  { title: 'Founders Club · Annual', date: '30 Sep 2026', amount: '$540.00', status: 'PAID', icon: 'credit-card' as const },
-];
+function initials(name: string) {
+  return name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
+}
 
 export default function ProfileScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const api = useMemberApi();
+  const { signOut } = useAuth();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const [preferences, setPreferences] = useState(initialPreferences);
-
-  const toggle = (key: keyof typeof initialPreferences) => {
-    setPreferences((previous) => ({ ...previous, [key]: !previous[key] }));
-  };
+  const profileQuery = useQuery({
+    queryKey: ['member', 'me'],
+    queryFn: () => api<MemberProfile>('/member/me'),
+  });
+  const profile = profileQuery.data;
+  const membership = profile?.membership;
 
   return (
     <ScrollView
@@ -35,112 +45,101 @@ export default function ProfileScreen() {
       <Text style={[styles.eyebrow, { color: colors.accentForeground }]}>YOUR MEMBERSHIP</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Profile</Text>
 
-      <View style={[styles.identityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
-          <Text style={[styles.avatarText, { color: colors.primary }]}>AM</Text>
-          <View style={[styles.avatarDot, { backgroundColor: colors.forestMid, borderColor: colors.card }]} />
-        </View>
-        <View style={styles.identityCopy}>
-          <Text style={[styles.name, { color: colors.foreground }]}>Alex Morgan</Text>
-          <Text style={[styles.memberSince, { color: colors.mutedForeground }]}>Member since September 2023</Text>
-        </View>
-        <View style={[styles.activePill, { backgroundColor: colors.accent }]}>
-          <Text style={[styles.activeText, { color: colors.primary }]}>ACTIVE</Text>
-        </View>
-      </View>
-
-      <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Personal details</Text>
-        <Feather name="user" size={16} color={colors.mutedForeground} />
-      </View>
-      <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <DetailRow label="EMAIL" value="alex.morgan@email.test" colors={colors} />
-        <DetailRow label="MOBILE" value="+1 (415) 555-0186" colors={colors} />
-        <DetailRow label="HOME CLUB" value="Marina District" colors={colors} last />
-      </View>
-
-      <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Membership</Text>
-        <Feather name="hexagon" size={16} color={colors.accentForeground} />
-      </View>
-      <View style={[styles.membershipCard, { backgroundColor: colors.forestDeep }]}>
-        <View style={styles.membershipTop}>
-          <Text style={[styles.planEyebrow, { color: colors.lime }]}>YOUR PLAN</Text>
-          <View style={[styles.planMark, { backgroundColor: colors.forestOverlay }]}>
-            <Feather name="hexagon" size={17} color={colors.lime} />
-          </View>
-        </View>
-        <Text style={[styles.planName, { color: colors.forestText }]}>Founders Club</Text>
-        <Text style={[styles.planSub, { color: colors.forestMuted }]}>Full access · All club hours</Text>
-        <View style={[styles.planDivider, { backgroundColor: colors.forestLine }]} />
-        <View style={styles.planMetaRow}>
-          <View>
-            <Text style={[styles.planLabel, { color: colors.forestCaption }]}>MEMBERSHIP ID</Text>
-            <Text style={[styles.planValue, { color: colors.forestText }]}>MG-2048-731</Text>
-          </View>
-          <View style={styles.planMetaRight}>
-            <Text style={[styles.planLabel, { color: colors.forestCaption }]}>EXPIRES</Text>
-            <Text style={[styles.planValue, { color: colors.forestText }]}>30 Sep 2027</Text>
-          </View>
-        </View>
-      </View>
-
-      <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Payment history</Text>
-        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>RECENT</Text>
-      </View>
-      <View style={[styles.paymentCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {payments.map((payment, index) => (
-          <View key={payment.title} style={[styles.paymentRow, index < payments.length - 1 && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
-            <View style={[styles.paymentIcon, { backgroundColor: colors.muted }]}>
-              <Feather name={payment.icon} size={15} color={colors.accentForeground} />
+      {profile ? (
+        <>
+          <View style={[styles.identityCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.avatar, { backgroundColor: colors.accent }]}>
+              <Text style={[styles.avatarText, { color: colors.primary }]}>{initials(profile.fullName)}</Text>
+              <View style={[styles.avatarDot, { backgroundColor: colors.forestMid, borderColor: colors.card }]} />
             </View>
-            <View style={styles.paymentCopy}>
-              <Text style={[styles.paymentTitle, { color: colors.foreground }]}>{payment.title}</Text>
-              <Text style={[styles.paymentDate, { color: colors.mutedForeground }]}>{payment.date} · {payment.status}</Text>
+            <View style={styles.identityCopy}>
+              <Text style={[styles.name, { color: colors.foreground }]}>{profile.fullName}</Text>
+              <Text style={[styles.memberSince, { color: colors.mutedForeground }]}>
+                Member since {formatDate(profile.registeredAt, { month: 'long', year: 'numeric' })}
+              </Text>
             </View>
-            <Text style={[styles.paymentAmount, { color: colors.foreground }]}>{payment.amount}</Text>
+            <View style={[styles.activePill, { backgroundColor: colors.accent }]}>
+              <Text style={[styles.activeText, { color: colors.primary }]}>{profile.status.toUpperCase()}</Text>
+            </View>
           </View>
-        ))}
-      </View>
-      <View style={[styles.paymentMethod, { backgroundColor: colors.warm }]}>
-        <Feather name="credit-card" size={14} color={colors.gold} />
-        <Text style={[styles.paymentMethodText, { color: colors.foreground }]}>Visa ending in 0428</Text>
-        <Text style={[styles.defaultLabel, { color: colors.mutedForeground }]}>DEFAULT</Text>
-      </View>
 
-      <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your preferences</Text>
-        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>ON THIS SCREEN</Text>
-      </View>
-      <View style={[styles.preferencesCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <PreferenceRow
-          testID="setting-class-reminders"
-          title="Class reminders"
-          detail="A heads-up before your booked class"
-          value={preferences.classReminders}
-          onToggle={() => toggle('classReminders')}
-          colors={colors}
-        />
-        <PreferenceRow
-          testID="setting-workout-reminders"
-          title="Training nudges"
-          detail="A gentle reminder on plan days"
-          value={preferences.workoutReminders}
-          onToggle={() => toggle('workoutReminders')}
-          colors={colors}
-        />
-        <PreferenceRow
-          testID="setting-monthly-recap"
-          title="Monthly progress recap"
-          detail="Your attendance and milestones"
-          value={preferences.monthlyRecap}
-          onToggle={() => toggle('monthlyRecap')}
-          colors={colors}
-          last
-        />
-      </View>
-      <Text style={[styles.localNote, { color: colors.mutedForeground }]}>Preference switches are a local preview; no account settings are sent or saved.</Text>
+          <View style={styles.sectionHeading}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Personal details</Text>
+            <Feather name="user" size={16} color={colors.mutedForeground} />
+          </View>
+          <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <DetailRow label="EMAIL" value={profile.email ?? 'Not on file'} colors={colors} />
+            <DetailRow label="MOBILE" value={profile.phone} colors={colors} last />
+          </View>
+
+          <View style={styles.sectionHeading}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Membership</Text>
+            <Feather name="hexagon" size={16} color={colors.accentForeground} />
+          </View>
+          <View style={[styles.membershipCard, { backgroundColor: colors.forestDeep }]}>
+            <View style={styles.membershipTop}>
+              <Text style={[styles.planEyebrow, { color: colors.lime }]}>YOUR PLAN</Text>
+              <View style={[styles.planMark, { backgroundColor: colors.forestOverlay }]}>
+                <Feather name="hexagon" size={17} color={colors.lime} />
+              </View>
+            </View>
+            <Text style={[styles.planName, { color: colors.forestText }]}>
+              {membership?.planName ?? 'No membership on file'}
+            </Text>
+            <Text style={[styles.planSub, { color: colors.forestMuted }]}>
+              {membership
+                ? `KES ${membership.monthlyPriceKes.toLocaleString()} per month · ${membership.status}`
+                : 'Contact reception to update your membership record.'}
+            </Text>
+            <View style={[styles.planDivider, { backgroundColor: colors.forestLine }]} />
+            <View style={styles.planMetaRow}>
+              <View>
+                <Text style={[styles.planLabel, { color: colors.forestCaption }]}>MEMBER NUMBER</Text>
+                <Text style={[styles.planValue, { color: colors.forestText }]}>{profile.memberNumber}</Text>
+              </View>
+              {membership ? (
+                <View style={styles.planMetaRight}>
+                  <Text style={[styles.planLabel, { color: colors.forestCaption }]}>EXPIRES</Text>
+                  <Text style={[styles.planValue, { color: colors.forestText }]}>
+                    {formatDate(`${membership.expiresOn}T12:00:00+03:00`, { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+
+          <View style={[styles.visitsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={[styles.visitIcon, { backgroundColor: colors.accent }]}>
+              <Feather name="calendar" size={15} color={colors.primary} />
+            </View>
+            <View style={styles.visitCopy}>
+              <Text style={[styles.visitTitle, { color: colors.foreground }]}>Gym visits this month</Text>
+              <Text style={[styles.visitSubtitle, { color: colors.mutedForeground }]}>
+                Based on check-ins recorded by reception.
+              </Text>
+            </View>
+            <Text style={[styles.visitValue, { color: colors.foreground }]}>{profile.checkInsThisMonth}</Text>
+          </View>
+        </>
+      ) : (
+        <View style={[styles.detailsCard, { backgroundColor: colors.card, borderColor: colors.border, marginTop: 22, padding: 16 }]}>
+          <Text style={[styles.memberSince, { color: profileQuery.error ? colors.destructive : colors.mutedForeground }]}>
+            {profileQuery.error ? formatMemberApiError(profileQuery.error) : 'Loading your member profile…'}
+          </Text>
+        </View>
+      )}
+
+      <Pressable
+        accessibilityRole="button"
+        onPress={() => void signOut()}
+        style={({ pressed }) => [
+          styles.signOutButton,
+          { borderColor: colors.border, backgroundColor: colors.card, opacity: pressed ? 0.75 : 1 },
+        ]}
+      >
+        <Feather name="log-out" size={15} color={colors.primary} />
+        <Text style={[styles.signOutText, { color: colors.primary }]}>Sign out</Text>
+      </Pressable>
       <View style={{ height: 115 }} />
     </ScrollView>
   );
@@ -160,38 +159,6 @@ function DetailRow({ label, value, last = false, colors }: {
   );
 }
 
-function PreferenceRow({ testID, title, detail, value, onToggle, last = false, colors }: {
-  testID: string;
-  title: string;
-  detail: string;
-  value: boolean;
-  onToggle: () => void;
-  last?: boolean;
-  colors: ReturnType<typeof useColors>;
-}) {
-  return (
-    <View style={[styles.preferenceRow, !last && { borderBottomColor: colors.border, borderBottomWidth: 1 }]}>
-      <View style={styles.preferenceCopy}>
-        <Text style={[styles.preferenceTitle, { color: colors.foreground }]}>{title}</Text>
-        <Text style={[styles.preferenceDetail, { color: colors.mutedForeground }]}>{detail}</Text>
-      </View>
-      <Pressable
-        testID={testID}
-        accessibilityRole="switch"
-        accessibilityLabel={title}
-        accessibilityState={{ checked: value }}
-        onPress={onToggle}
-        style={({ pressed }) => [
-          styles.switchTrack,
-          { backgroundColor: value ? colors.forestMid : colors.border, opacity: pressed ? 0.75 : 1 },
-        ]}
-      >
-        <View style={[styles.switchThumb, { backgroundColor: colors.card, alignSelf: value ? 'flex-end' : 'flex-start' }]} />
-      </Pressable>
-    </View>
-  );
-}
-
 const styles = StyleSheet.create({
   screen: { flex: 1 },
   content: { paddingHorizontal: 22, paddingBottom: 28 },
@@ -203,12 +170,11 @@ const styles = StyleSheet.create({
   avatarDot: { position: 'absolute', width: 11, height: 11, borderRadius: 6, right: -1, bottom: -1, borderWidth: 2 },
   identityCopy: { flex: 1, marginLeft: 12 },
   name: { fontSize: 15, fontWeight: '700' },
-  memberSince: { fontSize: 10, marginTop: 4 },
+  memberSince: { fontSize: 10, marginTop: 4, lineHeight: 15 },
   activePill: { paddingHorizontal: 8, paddingVertical: 6, borderRadius: 9 },
   activeText: { fontSize: 8, letterSpacing: 0.7, fontWeight: '700' },
   sectionHeading: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 27, marginBottom: 12 },
   sectionTitle: { fontSize: 18, letterSpacing: -0.3, fontWeight: '700' },
-  sectionAside: { fontSize: 8, fontWeight: '700', letterSpacing: 0.9 },
   detailsCard: { borderWidth: 1, borderRadius: 19, paddingHorizontal: 15 },
   detailRow: { minHeight: 57, justifyContent: 'center' },
   detailLabel: { fontSize: 8, letterSpacing: 1, fontWeight: '700', marginBottom: 4 },
@@ -218,28 +184,18 @@ const styles = StyleSheet.create({
   planEyebrow: { fontSize: 8, letterSpacing: 1.2, fontWeight: '700' },
   planMark: { width: 31, height: 31, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
   planName: { fontSize: 19, fontWeight: '600', marginTop: 6 },
-  planSub: { fontSize: 10, marginTop: 4 },
-  planDivider: { height: 1, marginTop: 16, marginBottom: 13 },
-  planMetaRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  planSub: { fontSize: 10, marginTop: 5, textTransform: 'capitalize' },
+  planDivider: { height: 1, marginTop: 18, marginBottom: 15 },
+  planMetaRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   planMetaRight: { alignItems: 'flex-end' },
-  planLabel: { fontSize: 8, letterSpacing: 0.9, fontWeight: '700', marginBottom: 4 },
-  planValue: { fontSize: 10, fontWeight: '600' },
-  paymentCard: { borderWidth: 1, borderRadius: 19, paddingHorizontal: 13 },
-  paymentRow: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  paymentIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
-  paymentCopy: { flex: 1 },
-  paymentTitle: { fontSize: 10, fontWeight: '700' },
-  paymentDate: { fontSize: 8, marginTop: 4 },
-  paymentAmount: { fontSize: 11, fontWeight: '700' },
-  paymentMethod: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: 13, paddingHorizontal: 12, paddingVertical: 11, marginTop: 9 },
-  paymentMethodText: { fontSize: 10, fontWeight: '600', flex: 1 },
-  defaultLabel: { fontSize: 7, fontWeight: '700', letterSpacing: 0.8 },
-  preferencesCard: { borderWidth: 1, borderRadius: 19, paddingHorizontal: 14 },
-  preferenceRow: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 10 },
-  preferenceCopy: { flex: 1 },
-  preferenceTitle: { fontSize: 11, fontWeight: '700' },
-  preferenceDetail: { fontSize: 9, marginTop: 4 },
-  switchTrack: { width: 42, height: 25, borderRadius: 13, padding: 3, justifyContent: 'center' },
-  switchThumb: { width: 19, height: 19, borderRadius: 10 },
-  localNote: { fontSize: 9, lineHeight: 14, textAlign: 'center', marginTop: 11, paddingHorizontal: 10 },
+  planLabel: { fontSize: 7, letterSpacing: 0.8, fontWeight: '700' },
+  planValue: { fontSize: 10, fontWeight: '700', marginTop: 5 },
+  visitsCard: { flexDirection: 'row', alignItems: 'center', gap: 11, borderWidth: 1, borderRadius: 17, padding: 13, marginTop: 19 },
+  visitIcon: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
+  visitCopy: { flex: 1 },
+  visitTitle: { fontSize: 11, fontWeight: '700' },
+  visitSubtitle: { fontSize: 9, marginTop: 3 },
+  visitValue: { fontSize: 18, fontWeight: '700' },
+  signOutButton: { minHeight: 45, borderWidth: 1, borderRadius: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 24 },
+  signOutText: { fontSize: 11, fontWeight: '700' },
 });

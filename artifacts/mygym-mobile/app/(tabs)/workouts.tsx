@@ -1,179 +1,214 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 import { useColors } from '@/hooks/useColors';
+import { formatMemberApiError, MemberWorkout, WorkoutSession } from '@/lib/member-api';
+import { useMemberApi } from '@/lib/useMemberApi';
 
-const LOG_KEY = '@mygym/workout-logs-v1';
-const days = [
-  { day: 'MON', title: 'Strength foundations', focus: 'Upper body', duration: '45 min', exercises: [
-    { id: 'bench', name: 'Barbell bench press', sets: 3, reps: '8–10', weight: '40' },
-    { id: 'row', name: 'Seated cable row', sets: 3, reps: '10–12', weight: '32.5' },
-    { id: 'press', name: 'Dumbbell shoulder press', sets: 3, reps: '8–10', weight: '10' },
-    { id: 'pulldown', name: 'Lat pulldown', sets: 3, reps: '10–12', weight: '35' },
-  ] },
-  { day: 'TUE', title: 'Easy miles', focus: 'Cardio', duration: '30 min', exercises: [] },
-  { day: 'WED', title: 'Lower body strength', focus: 'Lower body', duration: '50 min', exercises: [
-    { id: 'squat', name: 'Goblet squat', sets: 4, reps: '8–10', weight: '20' },
-    { id: 'rdl', name: 'Dumbbell Romanian deadlift', sets: 3, reps: '10–12', weight: '16' },
-    { id: 'lunge', name: 'Reverse lunge', sets: 3, reps: '8 / side', weight: '8' },
-  ] },
-  { day: 'THU', title: 'Rest & recover', focus: 'Recovery', duration: 'Optional', exercises: [] },
-  { day: 'FRI', title: 'Strength foundations', focus: 'Upper body', duration: '45 min', exercises: [
-    { id: 'deadlift', name: 'Kettlebell deadlift', sets: 3, reps: '10–12', weight: '24' },
-    { id: 'pushup', name: 'Incline push-up', sets: 3, reps: '8–12', weight: '0' },
-    { id: 'carry', name: 'Farmer carry', sets: 3, reps: '30 sec', weight: '16' },
-  ] },
-  { day: 'SAT', title: 'Open gym', focus: 'Your choice', duration: 'Flexible', exercises: [] },
-  { day: 'SUN', title: 'Rest day', focus: 'Recovery', duration: 'Take a breath', exercises: [] },
-];
-
-type Exercise = (typeof days)[number]['exercises'][number];
-type ScheduledDay = (typeof days)[number] & { date: Date; dateKey: string; month: string };
-type WorkoutLog = {
-  id: string;
-  date: string;
-  workout: string;
-  completedAt: string;
-  exercises: { id: string; weight: string; reps: string; completed: boolean }[];
+type EntryState = {
+  weight: string;
+  reps: string;
+  duration: string;
+  completed: boolean;
 };
-type EntryState = { weight: string; reps: string; completed: boolean };
-type SaveState = 'loading' | 'ready' | 'saving' | 'saved' | 'error';
 
 function triggerHaptic() {
-  if (Platform.OS !== 'web') {
-    void Haptics.selectionAsync();
-  }
+  if (Platform.OS !== 'web') void Haptics.selectionAsync();
 }
 
-function getScheduledWeek(): ScheduledDay[] {
-  const today = new Date();
-  const monday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  return days.map((day, index) => {
-    const date = new Date(monday);
-    date.setDate(monday.getDate() + index);
-    const dateKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return {
-      ...day,
-      date,
-      dateKey,
-      month: new Intl.DateTimeFormat('en-GB', { month: 'short' }).format(date).toUpperCase(),
-    };
-  });
+function gymDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Nairobi',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function sessionDateLabel(session: WorkoutSession) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Nairobi',
+    day: 'numeric',
+    month: 'short',
+  }).format(new Date(`${session.sessionDate}T12:00:00+03:00`));
 }
 
 export default function WorkoutsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const api = useMemberApi();
+  const queryClient = useQueryClient();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const [selectedDay, setSelectedDay] = useState((new Date().getDay() + 6) % 7);
-  const scheduledWeek = useMemo(getScheduledWeek, []);
-  const [logs, setLogs] = useState<WorkoutLog[]>([]);
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string | null>(null);
   const [entryState, setEntryState] = useState<Record<string, EntryState>>({});
-  const [saveState, setSaveState] = useState<SaveState>('loading');
-  const [error, setError] = useState('');
-  const activeDay = scheduledWeek[selectedDay] ?? scheduledWeek[0];
-  const isTrainingDay = activeDay.exercises.length > 0;
-  const completedCount = activeDay.exercises.filter((exercise) => entryState[exercise.id]?.completed).length;
-  const allComplete = isTrainingDay && completedCount === activeDay.exercises.length;
-  const currentDate = activeDay.dateKey;
-  const existingLog = useMemo(() => logs.find((log) => log.id === `${currentDate}-${activeDay.title}`), [logs, currentDate, activeDay.title]);
+  const currentDate = gymDateKey();
+
+  const workoutsQuery = useQuery({
+    queryKey: ['member', 'workouts'],
+    queryFn: () => api<MemberWorkout[]>('/member/workouts'),
+  });
+  const workouts = workoutsQuery.data ?? [];
+  const activeWorkout =
+    workouts.find((workout) => workout.id === selectedAssignmentId) ?? workouts[0] ?? null;
+  const todaySession = activeWorkout?.sessions.find((item) => item.sessionDate === currentDate);
+  const completedCount = activeWorkout
+    ? activeWorkout.exercises.filter((exercise) => entryState[exercise.id]?.completed).length
+    : 0;
+  const allComplete =
+    Boolean(activeWorkout?.exercises.length) &&
+    completedCount === (activeWorkout?.exercises.length ?? 0);
+  const sessions = useMemo(
+    () =>
+      workouts
+        .flatMap((workout) =>
+          workout.sessions.map((session) => ({ ...session, workoutName: workout.programName })),
+        )
+        .sort((a, b) => b.sessionDate.localeCompare(a.sessionDate)),
+    [workouts],
+  );
+
+  const saveMutation = useMutation({
+    mutationFn: ({
+      assignmentId,
+      exercises,
+    }: {
+      assignmentId: string;
+      exercises: {
+        exerciseId: string;
+        completed: boolean;
+        weightKg: number | null;
+        repsCompleted: number | null;
+        durationSecondsCompleted: number | null;
+      }[];
+    }) =>
+      api<WorkoutSession>(`/member/workouts/${assignmentId}/sessions`, {
+        method: 'POST',
+        body: JSON.stringify({ exercises }),
+      }),
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['member', 'workouts'] }),
+        queryClient.invalidateQueries({ queryKey: ['member', 'progress'] }),
+      ]);
+    },
+  });
 
   useEffect(() => {
-    let mounted = true;
-    AsyncStorage.getItem(LOG_KEY)
-      .then((raw) => {
-        if (!mounted) return;
-        if (raw) setLogs(JSON.parse(raw) as WorkoutLog[]);
-        setSaveState('ready');
-      })
-      .catch(() => {
-        if (mounted) {
-          setSaveState('error');
-          setError('Your saved sessions could not be loaded. You can still complete a workout.');
-        }
-      });
-    return () => { mounted = false; };
-  }, []);
-
-  useEffect(() => {
+    if (!activeWorkout) {
+      setEntryState({});
+      return;
+    }
+    const savedById = new Map(todaySession?.exercises.map((item) => [item.exerciseId, item]));
     const initial: Record<string, EntryState> = {};
-    activeDay.exercises.forEach((exercise) => {
-      const saved = existingLog?.exercises.find((item) => item.id === exercise.id);
+    for (const exercise of activeWorkout.exercises) {
+      const saved = savedById.get(exercise.id);
       initial[exercise.id] = {
-        weight: saved?.weight ?? exercise.weight,
-        reps: saved?.reps ?? exercise.reps.split(/[–/ ]/)[0],
+        weight: saved?.weightKg == null ? '' : String(saved.weightKg),
+        reps: saved?.repsCompleted == null ? '' : String(saved.repsCompleted),
+        duration: saved?.durationSecondsCompleted == null ? '' : String(saved.durationSecondsCompleted),
         completed: saved?.completed ?? false,
       };
-    });
-    setEntryState(initial);
-  }, [activeDay, existingLog]);
-
-  const persistLog = useCallback(async (exerciseStates: Record<string, EntryState>, completeAll = false) => {
-    const exercises: WorkoutLog['exercises'] = activeDay.exercises.map((exercise) => ({
-      id: exercise.id,
-      weight: exerciseStates[exercise.id]?.weight ?? exercise.weight,
-      reps: exerciseStates[exercise.id]?.reps ?? exercise.reps.split(/[–/ ]/)[0],
-      completed: completeAll || Boolean(exerciseStates[exercise.id]?.completed),
-    }));
-    const log: WorkoutLog = {
-      id: `${currentDate}-${activeDay.title}`,
-      date: currentDate,
-      workout: activeDay.title,
-      completedAt: new Date().toISOString(),
-      exercises,
-    };
-    const next = [log, ...logs.filter((item) => item.id !== log.id)];
-    setSaveState('saving');
-    setError('');
-    setLogs(next);
-    try {
-      await AsyncStorage.setItem(LOG_KEY, JSON.stringify(next));
-      setSaveState('saved');
-    } catch {
-      setSaveState('error');
-      setError('Could not save this session on your device. Please try again.');
     }
-  }, [activeDay, currentDate, logs]);
+    setEntryState(initial);
+  }, [activeWorkout, todaySession]);
 
-  const setExerciseValue = (id: string, key: 'weight' | 'reps', value: string) => {
-    if (!/^\d{0,3}([.]\d{0,1})?$/.test(value)) return;
-    setEntryState((previous) => ({
-      ...previous,
-      [id]: { ...previous[id], [key]: value, completed: previous[id]?.completed ?? false },
-    }));
-    setSaveState('ready');
+  const persistSession = async (
+    exerciseStates: Record<string, EntryState>,
+    completeAll = false,
+  ) => {
+    if (!activeWorkout) return;
+    try {
+      const exercises = activeWorkout.exercises.map((exercise) => {
+        const state = exerciseStates[exercise.id] ?? {
+          weight: '',
+          reps: '',
+          duration: '',
+          completed: false,
+        };
+        return {
+          exerciseId: exercise.id,
+          completed: completeAll || state.completed,
+          weightKg: state.weight ? Number(state.weight) : null,
+          repsCompleted:
+            exercise.repetitions == null || !state.reps ? null : Number(state.reps),
+          durationSecondsCompleted:
+            exercise.durationSeconds == null || !state.duration
+              ? null
+              : Number(state.duration),
+        };
+      });
+      await saveMutation.mutateAsync({ assignmentId: activeWorkout.id, exercises });
+    } catch {
+      // The mutation's error is rendered below; don't present an unsaved log as complete.
+    }
   };
 
-  const toggleExercise = async (exercise: Exercise) => {
+  const setExerciseValue = (
+    id: string,
+    key: 'weight' | 'reps' | 'duration',
+    value: string,
+  ) => {
+    const pattern = key === 'weight' ? /^\d{0,4}([.]\d{0,2})?$/ : /^\d{0,5}$/;
+    if (!pattern.test(value)) return;
+    setEntryState((previous) => ({
+      ...previous,
+      [id]: {
+        weight: previous[id]?.weight ?? '',
+        reps: previous[id]?.reps ?? '',
+        duration: previous[id]?.duration ?? '',
+        completed: previous[id]?.completed ?? false,
+        [key]: value,
+      },
+    }));
+  };
+
+  const toggleExercise = async (exerciseId: string) => {
     triggerHaptic();
     const next = {
       ...entryState,
-      [exercise.id]: { ...entryState[exercise.id], completed: !entryState[exercise.id]?.completed },
+      [exerciseId]: {
+        weight: entryState[exerciseId]?.weight ?? '',
+        reps: entryState[exerciseId]?.reps ?? '',
+        duration: entryState[exerciseId]?.duration ?? '',
+        completed: !entryState[exerciseId]?.completed,
+      },
     };
     setEntryState(next);
-    await persistLog(next);
+    await persistSession(next);
   };
 
   const completeSession = async () => {
-    if (!isTrainingDay) return;
+    if (!activeWorkout) return;
     const next: Record<string, EntryState> = {};
-    activeDay.exercises.forEach((exercise) => {
-      next[exercise.id] = { ...entryState[exercise.id], completed: true };
+    activeWorkout.exercises.forEach((exercise) => {
+      next[exercise.id] = {
+        weight: entryState[exercise.id]?.weight ?? '',
+        reps: entryState[exercise.id]?.reps ?? '',
+        duration: entryState[exercise.id]?.duration ?? '',
+        completed: true,
+      };
     });
     setEntryState(next);
     triggerHaptic();
-    await persistLog(next, true);
+    await persistSession(next, true);
   };
 
-  const statusLabel = saveState === 'loading' ? 'Loading your logs…'
-    : saveState === 'saving' ? 'Saving on this device…'
-      : saveState === 'saved' ? 'Saved on this device'
-        : saveState === 'error' ? 'Not saved' : 'Workout log stays on this device';
+  const error = workoutsQuery.error ?? saveMutation.error;
+  const saveLabel = workoutsQuery.isPending
+    ? 'Loading your trainer-approved plan…'
+    : saveMutation.isPending
+      ? 'Saving to your MyGym account…'
+      : saveMutation.isSuccess
+        ? 'Saved to your MyGym account'
+        : error
+          ? 'Not saved'
+          : 'Your sessions are private to you';
 
   return (
     <KeyboardAwareScrollViewCompat
@@ -189,69 +224,123 @@ export default function WorkoutsScreen() {
         </View>
         <View style={[styles.logBadge, { backgroundColor: colors.accent }]}>
           <Feather name="check-circle" size={14} color={colors.primary} />
-          <Text style={[styles.logBadgeText, { color: colors.primary }]}>{logs.length} logged</Text>
+          <Text style={[styles.logBadgeText, { color: colors.primary }]}>{sessions.length} logged</Text>
         </View>
       </View>
-      <Text style={[styles.intro, { color: colors.mutedForeground }]}>One good session at a time.</Text>
+      <Text style={[styles.intro, { color: colors.mutedForeground }]}>
+        One good session at a time.
+      </Text>
 
       <View style={styles.sectionRow}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>This week</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Assigned by your trainer</Text>
         <Text style={[styles.weekLabel, { color: colors.mutedForeground }]}>
-          {`${scheduledWeek[0].date.getDate()} ${scheduledWeek[0].month} — ${scheduledWeek[6].date.getDate()} ${scheduledWeek[6].month}`}
+          {workouts.length} {workouts.length === 1 ? 'PLAN' : 'PLANS'}
         </Text>
       </View>
-      <View style={[styles.weekStrip, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {scheduledWeek.map((day, index) => {
-          const selected = index === selectedDay;
-          const logged = logs.some((log) => log.date === day.dateKey);
-          return (
-            <Pressable
-              key={day.day}
-              testID={`workout-day-${day.day.toLowerCase()}`}
-              accessibilityRole="button"
-              accessibilityLabel={`${day.day}, ${day.month} ${day.date.getDate()}${logged ? ', workout logged' : ''}`}
-              accessibilityState={{ selected }}
-              onPress={() => { triggerHaptic(); setSelectedDay(index); }}
-              style={({ pressed }) => [
-                styles.dayButton,
-                 selected && { backgroundColor: colors.forestMid },
-                pressed && { opacity: 0.75 },
-              ]}
-            >
-              <Text style={[styles.dayName, { color: selected ? colors.primaryForeground : colors.mutedForeground }]}>{day.day}</Text>
-              <Text style={[styles.dayDate, { color: selected ? colors.primaryForeground : colors.foreground }]}>{day.date.getDate()}</Text>
-              <View style={[styles.dayIndicator, { backgroundColor: logged ? (selected ? colors.lime : colors.forestMid) : 'transparent' }]} />
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <View style={[styles.sessionHeading, { backgroundColor: colors.accent }]}>
-        <View style={styles.sessionTop}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.sectionOverline, { color: colors.gold }]}>{activeDay.day}, {activeDay.month} {activeDay.date.getDate()} · {activeDay.focus.toUpperCase()}</Text>
-            <Text style={[styles.sessionTitle, { color: colors.foreground }]}>{activeDay.title}</Text>
-            <Text style={[styles.heroCopy, { color: colors.secondaryForeground }]}>
-              {isTrainingDay ? `${activeDay.exercises.length} movements · ${completedCount} completed` : `${activeDay.focus} · ${activeDay.duration}`}
-            </Text>
-          </View>
-          <View style={[styles.durationBadge, { backgroundColor: colors.card }]}>
-            <Feather name="clock" size={13} color={colors.gold} />
-            <Text style={[styles.durationText, { color: colors.foreground }]}>{activeDay.duration}</Text>
-          </View>
+      {workouts.length ? (
+        <View style={[styles.planList, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {workouts.map((workout) => {
+            const selected = activeWorkout?.id === workout.id;
+            return (
+              <Pressable
+                key={workout.id}
+                accessibilityRole="button"
+                accessibilityState={{ selected }}
+                onPress={() => {
+                  triggerHaptic();
+                  setSelectedAssignmentId(workout.id);
+                }}
+                style={[
+                  styles.planChoice,
+                  selected && { backgroundColor: colors.forestMid },
+                ]}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.planName, { color: selected ? colors.primaryForeground : colors.foreground }]}>
+                    {workout.programName}
+                  </Text>
+                  <Text style={[styles.planGoal, { color: selected ? colors.forestText : colors.mutedForeground }]}>
+                    {workout.goal} · {workout.recommendedDaysPerWeek} days/week
+                  </Text>
+                </View>
+                <Feather
+                  name={selected ? 'check-circle' : 'chevron-right'}
+                  size={17}
+                  color={selected ? colors.primaryForeground : colors.mutedForeground}
+                />
+              </Pressable>
+            );
+          })}
         </View>
-        {isTrainingDay && (
-          <View style={[styles.progressLine, { backgroundColor: colors.card }]}>
-            <View style={[styles.progressFill, { backgroundColor: colors.forestMid, width: `${(completedCount / activeDay.exercises.length) * 100}%` }]} />
+      ) : (
+        <View style={[styles.restCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.restIcon, { backgroundColor: colors.accent }]}>
+            <Feather name="activity" size={19} color={colors.primary} />
           </View>
-        )}
-      </View>
+          <Text style={[styles.restTitle, { color: colors.foreground }]}>
+            {workoutsQuery.isPending ? 'Loading your plan…' : 'No workout assigned yet'}
+          </Text>
+          <Text style={[styles.restCopy, { color: colors.mutedForeground }]}>
+            {workoutsQuery.isPending
+              ? 'Your trainer-approved sessions will show here.'
+              : 'When your trainer assigns a program, it will appear here.'}
+          </Text>
+        </View>
+      )}
 
-      {isTrainingDay ? (
+      {activeWorkout ? (
         <>
+          <View style={[styles.sessionHeading, { backgroundColor: colors.accent }]}>
+            <View style={styles.sessionTop}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sectionOverline, { color: colors.gold }]}>
+                  TODAY · {activeWorkout.status.replace('_', ' ').toUpperCase()}
+                </Text>
+                <Text style={[styles.sessionTitle, { color: colors.foreground }]}>
+                  {activeWorkout.programName}
+                </Text>
+                <Text style={[styles.heroCopy, { color: colors.secondaryForeground }]}>
+                  {activeWorkout.exercises.length} movements · {completedCount} completed
+                </Text>
+              </View>
+              <View style={[styles.durationBadge, { backgroundColor: colors.card }]}>
+                <Feather name="clock" size={13} color={colors.gold} />
+                <Text style={[styles.durationText, { color: colors.foreground }]}>
+                  {activeWorkout.expectedSessionMinutes} min
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.progressLine, { backgroundColor: colors.card }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  {
+                    backgroundColor: colors.forestMid,
+                    width: `${activeWorkout.exercises.length ? (completedCount / activeWorkout.exercises.length) * 100 : 0}%`,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+
+          {activeWorkout.notes ? (
+            <View style={[styles.trainerNote, { backgroundColor: colors.warm }]}>
+              <Feather name="message-circle" size={13} color={colors.gold} />
+              <Text style={[styles.noteText, { color: colors.foreground }]}>
+                Trainer note: {activeWorkout.notes}
+              </Text>
+            </View>
+          ) : null}
+
           <View style={styles.exerciseList}>
-            {activeDay.exercises.map((exercise, index) => {
-              const done = Boolean(entryState[exercise.id]?.completed);
+            {activeWorkout.exercises.map((exercise, index) => {
+              const state = entryState[exercise.id];
+              const done = Boolean(state?.completed);
+              const target = exercise.repetitions
+                ? `${exercise.sets} sets · ${exercise.repetitions} reps`
+                : `${exercise.sets} sets · ${Math.ceil((exercise.durationSeconds ?? 0) / 60)} min`;
+              const quantityLabel = exercise.repetitions ? 'REPS DONE' : 'SECONDS DONE';
+              const quantityValue = exercise.repetitions ? state?.reps ?? '' : state?.duration ?? '';
               return (
                 <View key={exercise.id} style={[styles.exerciseCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.exerciseTop}>
@@ -262,18 +351,17 @@ export default function WorkoutsScreen() {
                     </View>
                     <View style={styles.exerciseNameWrap}>
                       <Text style={[styles.exerciseName, { color: colors.foreground }]}>{exercise.name}</Text>
-                      <Text style={[styles.exerciseTarget, { color: colors.mutedForeground }]}>{exercise.sets} sets · {exercise.reps} reps</Text>
+                      <Text style={[styles.exerciseTarget, { color: colors.mutedForeground }]}>{target}</Text>
                     </View>
                     <Pressable
-                      testID={`exercise-complete-${exercise.id}`}
                       accessibilityRole="checkbox"
                       accessibilityLabel={`Mark ${exercise.name} ${done ? 'incomplete' : 'complete'}`}
                       accessibilityState={{ checked: done }}
-                      onPress={() => void toggleExercise(exercise)}
-                      style={({ pressed }) => [
+                      disabled={saveMutation.isPending}
+                      onPress={() => void toggleExercise(exercise.id)}
+                      style={[
                         styles.checkButton,
                         { backgroundColor: done ? colors.primary : colors.background, borderColor: done ? colors.primary : colors.border },
-                        pressed && { opacity: 0.7 },
                       ]}
                     >
                       {done && <Feather name="check" size={15} color={colors.primaryForeground} />}
@@ -284,57 +372,56 @@ export default function WorkoutsScreen() {
                       <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>WEIGHT · KG</Text>
                       <View style={[styles.inputShell, { borderColor: colors.border, backgroundColor: colors.background }]}>
                         <TextInput
-                          testID={`exercise-weight-${exercise.id}`}
                           accessibilityLabel={`${exercise.name} weight in kilograms`}
-                          value={entryState[exercise.id]?.weight ?? exercise.weight}
+                          value={state?.weight ?? ''}
                           onChangeText={(value) => setExerciseValue(exercise.id, 'weight', value)}
                           keyboardType="decimal-pad"
-                          maxLength={5}
+                          maxLength={7}
                           style={[styles.input, { color: colors.foreground }]}
-                          placeholder="0"
+                          placeholder="—"
                           placeholderTextColor={colors.mutedForeground}
                         />
                       </View>
                     </View>
                     <View style={styles.inputGroup}>
-                      <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>REPS DONE</Text>
+                      <Text style={[styles.inputLabel, { color: colors.mutedForeground }]}>{quantityLabel}</Text>
                       <View style={[styles.inputShell, { borderColor: colors.border, backgroundColor: colors.background }]}>
                         <TextInput
-                          testID={`exercise-reps-${exercise.id}`}
-                          accessibilityLabel={`${exercise.name} completed repetitions`}
-                          value={entryState[exercise.id]?.reps ?? exercise.reps.split(/[–/ ]/)[0]}
-                          onChangeText={(value) => {
-                            if (/^\d{0,2}$/.test(value)) setExerciseValue(exercise.id, 'reps', value);
-                          }}
+                          accessibilityLabel={`${exercise.name} ${quantityLabel.toLowerCase()}`}
+                          value={quantityValue}
+                          onChangeText={(value) =>
+                            setExerciseValue(exercise.id, exercise.repetitions ? 'reps' : 'duration', value)
+                          }
                           keyboardType="number-pad"
-                          maxLength={2}
+                          maxLength={5}
                           style={[styles.input, { color: colors.foreground }]}
-                          placeholder="0"
+                          placeholder="—"
                           placeholderTextColor={colors.mutedForeground}
                         />
                       </View>
                     </View>
-                    <Text style={[styles.inputSuffix, { color: colors.mutedForeground }]}>reps</Text>
+                    <Text style={[styles.inputSuffix, { color: colors.mutedForeground }]}>
+                      {exercise.repetitions ? 'reps' : 'sec'}
+                    </Text>
                   </View>
                 </View>
               );
             })}
           </View>
+
           <Pressable
-            testID="save-workout-log"
             accessibilityRole="button"
-            accessibilityLabel="Save workout weights and repetitions"
-            disabled={saveState === 'loading' || saveState === 'saving'}
+            disabled={saveMutation.isPending}
             onPress={() => {
               triggerHaptic();
-              void persistLog(entryState);
+              void persistSession(entryState);
             }}
             style={({ pressed }) => [
               styles.saveWorkoutButton,
               {
                 borderColor: colors.border,
                 backgroundColor: colors.card,
-                opacity: saveState === 'loading' || saveState === 'saving' ? 0.55 : pressed ? 0.75 : 1,
+                opacity: saveMutation.isPending ? 0.55 : pressed ? 0.75 : 1,
               },
             ]}
           >
@@ -342,11 +429,9 @@ export default function WorkoutsScreen() {
             <Text style={[styles.saveWorkoutText, { color: colors.primary }]}>Save workout log</Text>
           </Pressable>
           <Pressable
-            testID="complete-workout-button"
             accessibilityRole="button"
-            accessibilityLabel={allComplete ? 'Workout completed' : 'Complete this workout'}
-            accessibilityState={{ disabled: allComplete || saveState === 'loading' || saveState === 'saving' }}
-            disabled={allComplete || saveState === 'loading' || saveState === 'saving'}
+            accessibilityState={{ disabled: allComplete || saveMutation.isPending }}
+            disabled={allComplete || saveMutation.isPending}
             onPress={() => void completeSession()}
             style={({ pressed }) => [
               styles.completeButton,
@@ -354,38 +439,46 @@ export default function WorkoutsScreen() {
             ]}
           >
             <Feather name={allComplete ? 'check-circle' : 'check'} size={17} color={colors.primaryForeground} />
-            <Text style={[styles.completeButtonText, { color: colors.primaryForeground }]}>{allComplete ? 'Session complete' : 'Complete session'}</Text>
+            <Text style={[styles.completeButtonText, { color: colors.primaryForeground }]}>
+              {allComplete ? 'Session complete' : 'Complete session'}
+            </Text>
           </Pressable>
         </>
-      ) : (
-        <View style={[styles.restCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.restIcon, { backgroundColor: colors.accent }]}><Feather name={activeDay.focus === 'Recovery' ? 'wind' : 'sun'} size={19} color={colors.primary} /></View>
-          <Text style={[styles.restTitle, { color: colors.foreground }]}>{activeDay.focus === 'Recovery' ? 'Recovery counts, too.' : 'Your day, your movement.'}</Text>
-          <Text style={[styles.restCopy, { color: colors.mutedForeground }]}>{activeDay.focus === 'Recovery' ? 'Let your body adapt. A gentle stretch or a walk is plenty.' : 'No assigned session today. Explore the club or take it easy.'}</Text>
-        </View>
-      )}
+      ) : null}
 
       <View style={styles.saveRow}>
-        <Feather name={saveState === 'error' ? 'alert-circle' : 'lock'} size={13} color={saveState === 'error' ? colors.destructive : colors.mutedForeground} />
-        <Text style={[styles.saveText, { color: saveState === 'error' ? colors.destructive : colors.mutedForeground }]}>{statusLabel}</Text>
+        <Feather name={error ? 'alert-circle' : 'lock'} size={13} color={error ? colors.destructive : colors.mutedForeground} />
+        <Text style={[styles.saveText, { color: error ? colors.destructive : colors.mutedForeground }]}>
+          {saveLabel}
+        </Text>
       </View>
-      {error ? <Text accessibilityRole="alert" style={[styles.errorText, { color: colors.destructive }]}>{error}</Text> : null}
+      {error ? (
+        <Text accessibilityRole="alert" style={[styles.errorText, { color: colors.destructive }]}>
+          {formatMemberApiError(error)}
+        </Text>
+      ) : null}
 
-      {logs.length > 0 && (
+      {sessions.length > 0 ? (
         <View style={styles.historySection}>
           <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recent sessions</Text>
-          {logs.slice(0, 3).map((log) => (
-            <View key={log.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
-              <View style={[styles.historyIcon, { backgroundColor: colors.accent }]}><Feather name="check" size={14} color={colors.primary} /></View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.historyTitle, { color: colors.foreground }]}>{log.workout}</Text>
-                <Text style={[styles.historyDate, { color: colors.mutedForeground }]}>{new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short' }).format(new Date(`${log.date}T12:00:00`))} · {log.exercises.filter((item) => item.completed).length} exercises</Text>
+          {sessions.slice(0, 4).map((session) => (
+            <View key={session.id} style={[styles.historyRow, { borderBottomColor: colors.border }]}>
+              <View style={[styles.historyIcon, { backgroundColor: colors.accent }]}>
+                <Feather name={session.status === 'completed' ? 'check' : 'clock'} size={14} color={colors.primary} />
               </View>
-              <Text style={[styles.historyComplete, { color: colors.accentForeground }]}>{log.exercises.every((item) => item.completed) ? 'DONE' : 'IN PROGRESS'}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.historyTitle, { color: colors.foreground }]}>{session.workoutName}</Text>
+                <Text style={[styles.historyDate, { color: colors.mutedForeground }]}>
+                  {sessionDateLabel(session)} · {session.exercises.filter((item) => item.completed).length} exercises
+                </Text>
+              </View>
+              <Text style={[styles.historyComplete, { color: colors.accentForeground }]}>
+                {session.status === 'completed' ? 'DONE' : 'IN PROGRESS'}
+              </Text>
             </View>
           ))}
         </View>
-      )}
+      ) : null}
       <View style={{ height: 120 }} />
     </KeyboardAwareScrollViewCompat>
   );
@@ -403,11 +496,10 @@ const styles = StyleSheet.create({
   sectionRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 28, marginBottom: 12 },
   sectionTitle: { fontSize: 18, letterSpacing: -0.3, fontWeight: '700' },
   weekLabel: { fontSize: 9, fontWeight: '700', letterSpacing: 1 },
-  weekStrip: { borderWidth: 1, borderRadius: 19, padding: 7, flexDirection: 'row', justifyContent: 'space-between' },
-  dayButton: { flex: 1, alignItems: 'center', paddingVertical: 10, borderRadius: 14 },
-  dayName: { fontSize: 8, fontWeight: '700', letterSpacing: 0.4 },
-  dayDate: { fontSize: 14, fontWeight: '700', marginTop: 5 },
-  dayIndicator: { width: 4, height: 4, borderRadius: 2, marginTop: 5 },
+  planList: { borderWidth: 1, borderRadius: 19, padding: 7 },
+  planChoice: { minHeight: 58, borderRadius: 13, paddingHorizontal: 12, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  planName: { fontSize: 11, fontWeight: '700' },
+  planGoal: { fontSize: 9, marginTop: 4, textTransform: 'capitalize' },
   sessionHeading: { borderRadius: 20, padding: 15, marginTop: 23, marginBottom: 16 },
   sessionTop: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionOverline: { fontSize: 8, letterSpacing: 1, fontWeight: '700', marginBottom: 5 },
@@ -415,9 +507,10 @@ const styles = StyleSheet.create({
   heroCopy: { fontSize: 9, marginTop: 5 },
   durationBadge: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 11, paddingHorizontal: 9, paddingVertical: 7 },
   durationText: { fontSize: 9, fontWeight: '600' },
-  progressLine: { height: 5, borderRadius: 3, overflow: 'hidden' },
+  progressLine: { height: 5, borderRadius: 3, overflow: 'hidden', marginTop: 13 },
   progressFill: { height: 5, borderRadius: 3 },
-  completionText: { fontSize: 10, marginTop: 8, marginBottom: 12 },
+  trainerNote: { flexDirection: 'row', gap: 8, alignItems: 'flex-start', borderRadius: 13, padding: 11, marginBottom: 12 },
+  noteText: { flex: 1, fontSize: 10, lineHeight: 15 },
   exerciseList: { gap: 10 },
   exerciseCard: { borderWidth: 1, borderRadius: 19, padding: 14 },
   exerciseTop: { flexDirection: 'row', alignItems: 'center', gap: 10 },
