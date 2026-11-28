@@ -1,6 +1,7 @@
 import React from 'react';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import QRCode from 'react-native-qrcode-svg';
+import { useQuery } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
 import {
   Platform,
@@ -12,39 +13,48 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { MemberEvent, MemberProfile, MemberProgress, MemberWorkout } from '@/lib/member-api';
+import { useMemberApi } from '@/lib/useMemberApi';
 
-const week = [
-  { day: 'M', attended: true },
-  { day: 'T', attended: true },
-  { day: 'W', attended: false },
-  { day: 'T', attended: true },
-  { day: 'F', attended: false },
-  { day: 'S', attended: false },
-  { day: 'S', attended: false },
-];
-const DEMO_MEMBER_TOKEN = 'MYGYM-DEMO-MG-2048-731-2027';
-
-function getNextCommunityRunDate() {
-  const now = new Date();
-  const daysUntilSaturday = (6 - now.getDay() + 7) % 7;
-  const eventDate = new Date(now);
-  eventDate.setDate(now.getDate() + daysUntilSaturday);
-  eventDate.setHours(7, 30, 0, 0);
-  if (eventDate <= now) eventDate.setDate(eventDate.getDate() + 7);
-  return eventDate;
+function dateLabel(value: string, options: Intl.DateTimeFormatOptions) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Nairobi',
+    ...options,
+  }).format(new Date(value));
 }
 
 export default function HomeScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const api = useMemberApi();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
-  const nextEventDate = getNextCommunityRunDate();
-  const nextEventDateLabel = new Intl.DateTimeFormat('en-GB', {
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  }).format(nextEventDate).toUpperCase();
+  const profileQuery = useQuery({
+    queryKey: ['member', 'me'],
+    queryFn: () => api<MemberProfile>('/member/me'),
+  });
+  const progressQuery = useQuery({
+    queryKey: ['member', 'progress'],
+    queryFn: () => api<MemberProgress>('/member/progress'),
+  });
+  const workoutsQuery = useQuery({
+    queryKey: ['member', 'workouts'],
+    queryFn: () => api<MemberWorkout[]>('/member/workouts'),
+  });
+  const eventsQuery = useQuery({
+    queryKey: ['member', 'events'],
+    queryFn: () => api<MemberEvent[]>('/member/events'),
+  });
+  const profile = profileQuery.data;
+  const nextEvent = eventsQuery.data?.[0];
+  const workout = workoutsQuery.data?.[0];
+  const assessments = progressQuery.data?.assessments ?? [];
+  const weights = assessments
+    .filter((item) => item.weightKg != null)
+    .slice(0, 6)
+    .reverse();
+  const minWeight = Math.min(...weights.map((item) => item.weightKg ?? 0));
+  const maxWeight = Math.max(...weights.map((item) => item.weightKg ?? 0));
   const todayLabel = new Intl.DateTimeFormat('en-GB', {
     weekday: 'long',
     day: 'numeric',
@@ -62,7 +72,9 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <View>
           <Text style={[styles.kicker, { color: colors.mutedForeground }]}>{todayLabel}</Text>
-          <Text style={[styles.greeting, { color: colors.foreground }]}>Hi, Alex</Text>
+          <Text style={[styles.greeting, { color: colors.foreground }]}>
+            Hi, {profile?.fullName.split(' ')[0] ?? 'there'}
+          </Text>
           <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>Ready to make today count?</Text>
         </View>
         <Pressable
@@ -85,8 +97,12 @@ export default function HomeScreen() {
           <Feather name="hexagon" size={14} color={colors.primary} />
         </View>
         <View style={styles.memberStatusCopy}>
-          <Text style={[styles.memberStatusName, { color: colors.foreground }]}>Founders Club</Text>
-          <Text style={[styles.memberStatusMeta, { color: colors.mutedForeground }]}>Member since September 2023</Text>
+          <Text style={[styles.memberStatusName, { color: colors.foreground }]}>
+            {profile?.membership?.planName ?? 'MyGym member'}
+          </Text>
+          <Text style={[styles.memberStatusMeta, { color: colors.mutedForeground }]}>
+            Member since {profile ? dateLabel(profile.registeredAt, { month: 'long', year: 'numeric' }) : '—'}
+          </Text>
         </View>
         <View style={[styles.activePill, { backgroundColor: colors.accent }]}>
           <View style={[styles.memberDot, { backgroundColor: colors.forestMid }]} />
@@ -97,7 +113,7 @@ export default function HomeScreen() {
       <Pressable
         testID="home-checkin-card"
         accessibilityRole="button"
-        accessibilityLabel="Open your demo member pass for check-in"
+        accessibilityLabel="Open your member QR pass for check-in"
         onPress={() => router.navigate('/member-qr')}
         style={({ pressed }) => [
           styles.checkinCard,
@@ -105,28 +121,30 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.checkinCopy}>
-          <Text style={[styles.checkinOverline, { color: colors.forestCaption }]}>MEMBER PASS · DEMO</Text>
+          <Text style={[styles.checkinOverline, { color: colors.forestCaption }]}>MYGYM MEMBER PASS</Text>
           <Text style={[styles.checkinTitle, { color: colors.forestText }]}>Check in at the front desk</Text>
-          <Text style={[styles.checkinSub, { color: colors.forestMuted }]}>Your sample QR is ready to show.</Text>
+          <Text style={[styles.checkinSub, { color: colors.forestMuted }]}>Show your secure member QR at reception.</Text>
           <View style={[styles.checkinAction, { backgroundColor: colors.forestMid }]}>
             <MaterialCommunityIcons name="qrcode-scan" size={13} color={colors.primaryForeground} />
             <Text style={[styles.checkinActionText, { color: colors.primaryForeground }]}>SHOW QR</Text>
           </View>
         </View>
         <View style={[styles.homeQrTile, { backgroundColor: colors.card }]} accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
-          <QRCode
-            value={DEMO_MEMBER_TOKEN}
-            size={58}
-            color={colors.forestDeep}
-            backgroundColor={colors.card}
-            quietZone={3}
-          />
+          {profile?.qrToken ? (
+            <QRCode
+              value={profile.qrToken}
+              size={58}
+              color={colors.forestDeep}
+              backgroundColor={colors.card}
+              quietZone={3}
+            />
+          ) : <Feather name="loader" size={18} color={colors.mutedForeground} />}
         </View>
       </Pressable>
 
       <View style={styles.sectionHeading}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Your rhythm</Text>
-        <Text style={[styles.sectionMeta, { color: colors.mutedForeground }]}>THIS WEEK</Text>
+        <Text style={[styles.sectionMeta, { color: colors.mutedForeground }]}>THIS MONTH</Text>
       </View>
 
       <View style={styles.rhythmRow}>
@@ -144,13 +162,13 @@ export default function HomeScreen() {
             <View style={[styles.iconPlate, { backgroundColor: colors.warm }]}>
               <MaterialCommunityIcons name="fire" size={17} color={colors.gold} />
             </View>
-            <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>STREAK</Text>
+            <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>WORKOUTS</Text>
           </View>
           <View style={styles.streakNumberRow}>
-            <Text style={[styles.streakNumber, { color: colors.foreground }]}>6</Text>
-            <Text style={[styles.streakUnit, { color: colors.mutedForeground }]}>weeks</Text>
+            <Text style={[styles.streakNumber, { color: colors.foreground }]}>{progressQuery.data?.workoutsThisMonth ?? 0}</Text>
+            <Text style={[styles.streakUnit, { color: colors.mutedForeground }]}>this month</Text>
           </View>
-          <Text style={[styles.cardFootnote, { color: colors.mutedForeground }]}>Your longest yet. Keep it going.</Text>
+          <Text style={[styles.cardFootnote, { color: colors.mutedForeground }]}>Completed sessions logged to your plan.</Text>
         </View>
         <View
           style={[
@@ -167,22 +185,10 @@ export default function HomeScreen() {
               <Feather name="calendar" size={15} color={colors.primary} />
             </View>
             <Text style={[styles.miniLabel, { color: colors.mutedForeground }]}>VISITS</Text>
-            <Text style={[styles.visitCount, { color: colors.foreground }]}>3<Text style={[styles.visitTarget, { color: colors.mutedForeground }]}> / 4</Text></Text>
+            <Text style={[styles.visitCount, { color: colors.foreground }]}>{profile?.checkInsThisMonth ?? 0}</Text>
           </View>
-          <View style={styles.weekDots}>
-            {week.map((item, index) => (
-              <View key={`${item.day}-${index}`} style={styles.dayColumn}>
-                <View
-                  style={[
-                    styles.dayDot,
-                    { backgroundColor: item.attended ? colors.forestMid : colors.muted },
-                  ]}
-                >
-                  {item.attended ? <Feather name="check" size={10} color={colors.primaryForeground} /> : null}
-                </View>
-                <Text style={[styles.dayText, { color: colors.mutedForeground }]}>{item.day}</Text>
-              </View>
-            ))}
+          <View style={styles.monthVisits}>
+            <Text style={[styles.cardFootnote, { color: colors.mutedForeground }]}>Gym check-ins this month</Text>
           </View>
         </View>
       </View>
@@ -203,7 +209,7 @@ export default function HomeScreen() {
       <Pressable
         testID="today-workout-card"
         accessibilityRole="button"
-        accessibilityLabel="Open today's workout, Strength foundations"
+        accessibilityLabel={workout ? `Open your workout, ${workout.programName}` : 'Open your workout plan'}
         onPress={() => router.navigate('/workouts')}
         style={({ pressed }) => [
           styles.workoutCard,
@@ -220,17 +226,25 @@ export default function HomeScreen() {
           <View style={[styles.artCore, { backgroundColor: colors.forestMid }]}>
             <Feather name="activity" size={21} color={colors.primaryForeground} />
           </View>
-            <Text style={[styles.artNo, { color: colors.accentForeground }]}>01 / 04</Text>
+            <Text style={[styles.artNo, { color: colors.accentForeground }]}>
+              {workout ? `${workout.exercises.length} MOVES` : 'MY PLAN'}
+            </Text>
         </View>
         <View style={styles.workoutDetails}>
           <View style={styles.workoutEyebrow}>
             <View style={[styles.todayDot, { backgroundColor: colors.forestMid }]} />
-            <Text style={[styles.todayLabel, { color: colors.accentForeground }]}>TODAY'S SESSION</Text>
+            <Text style={[styles.todayLabel, { color: colors.accentForeground }]}>TRAINER-APPROVED PLAN</Text>
           </View>
-          <Text style={[styles.workoutTitle, { color: colors.foreground }]}>Strength foundations</Text>
-          <Text style={[styles.workoutMeta, { color: colors.mutedForeground }]}>Upper body · 45 min</Text>
+          <Text style={[styles.workoutTitle, { color: colors.foreground }]}>
+            {workout?.programName ?? 'No plan assigned'}
+          </Text>
+          <Text style={[styles.workoutMeta, { color: colors.mutedForeground }]}>
+            {workout ? `${workout.goal} · ${workout.expectedSessionMinutes} min` : 'Your trainer’s plan will appear here'}
+          </Text>
           <View style={styles.workoutBottom}>
-            <Text style={[styles.levelText, { color: colors.mutedForeground }]}>MODERATE</Text>
+            <Text style={[styles.levelText, { color: colors.mutedForeground }]}>
+              {workout ? `${workout.recommendedDaysPerWeek} DAYS / WEEK` : 'MEMBER PLAN'}
+            </Text>
             <View style={[styles.roundArrow, { backgroundColor: colors.primary }]}>
               <Feather name="arrow-up-right" size={15} color={colors.primaryForeground} />
             </View>
@@ -241,7 +255,7 @@ export default function HomeScreen() {
       <Pressable
         testID="next-event-preview"
         accessibilityRole="button"
-        accessibilityLabel={`Open Events for Community 5K run, ${nextEventDateLabel} at 7:30 AM`}
+        accessibilityLabel={nextEvent ? `Open Events for ${nextEvent.name}` : 'Open upcoming MyGym events'}
         onPress={() => router.navigate('/events')}
         style={({ pressed }) => [
           styles.nextEventCard,
@@ -250,12 +264,18 @@ export default function HomeScreen() {
       >
         <View style={[styles.nextEventDate, { backgroundColor: colors.accent }]}>
           <Feather name="navigation" size={14} color={colors.accentForeground} />
-          <Text style={[styles.nextEventDateText, { color: colors.accentForeground }]}>{nextEventDateLabel}</Text>
+          <Text style={[styles.nextEventDateText, { color: colors.accentForeground }]}>
+            {nextEvent ? dateLabel(nextEvent.startsAt, { weekday: 'short', day: 'numeric', month: 'short' }).toUpperCase() : 'MYGYM'}
+          </Text>
         </View>
         <View style={styles.nextEventCopy}>
           <Text style={[styles.nextEventEyebrow, { color: colors.accentForeground }]}>NEXT EVENT</Text>
-          <Text style={[styles.nextEventTitle, { color: colors.foreground }]}>Community 5K run</Text>
-          <Text style={[styles.nextEventMeta, { color: colors.mutedForeground }]}>7:30 AM · Marina Green</Text>
+          <Text style={[styles.nextEventTitle, { color: colors.foreground }]}>
+            {nextEvent?.name ?? 'No upcoming event'}
+          </Text>
+          <Text style={[styles.nextEventMeta, { color: colors.mutedForeground }]}>
+            {nextEvent ? `${dateLabel(nextEvent.startsAt, { hour: 'numeric', minute: '2-digit' })} · ${nextEvent.remainingSlots} spots left` : 'Check back soon'}
+          </Text>
         </View>
         <View style={[styles.nextEventArrow, { backgroundColor: colors.primary }]}>
           <Feather name="arrow-up-right" size={14} color={colors.primaryForeground} />
@@ -285,29 +305,41 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.progressCopy}>
-          <Text style={[styles.progressMetric, { color: colors.foreground }]}>+8.4<Text style={[styles.progressPercent, { color: colors.accentForeground }]}>%</Text></Text>
-          <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>strength this month</Text>
-          <Text style={[styles.progressNote, { color: colors.accentForeground }]}>Moving in the right direction</Text>
+          <Text style={[styles.progressMetric, { color: colors.foreground }]}>
+            {assessments[0]?.weightKg != null ? assessments[0].weightKg.toFixed(1) : '—'}
+            <Text style={[styles.progressPercent, { color: colors.accentForeground }]}>
+              {assessments[0]?.weightKg != null ? ' kg' : ''}
+            </Text>
+          </Text>
+          <Text style={[styles.progressLabel, { color: colors.mutedForeground }]}>latest recorded weight</Text>
+          <Text style={[styles.progressNote, { color: colors.accentForeground }]}>
+            {progressQuery.data?.workoutsThisMonth ?? 0} completed workouts this month
+          </Text>
         </View>
-        <View style={styles.chart} accessibilityLabel="Strength trend rising over four weeks">
-          {[30, 43, 38, 58, 54, 70, 65, 88].map((height, index) => (
+        <View style={styles.chart} accessibilityLabel="Body weight history from your recorded assessments">
+          {weights.length > 1 ? weights.map((item, index) => {
+            const range = maxWeight - minWeight || 1;
+            const height = 26 + (((item.weightKg ?? minWeight) - minWeight) / range) * 58;
+            return (
             <View key={index} style={styles.chartBarWrap}>
               <View
                 style={[
                   styles.chartBar,
                   {
                     height,
-                    backgroundColor: index === 7 ? colors.forestMid : colors.accent,
+                    backgroundColor: index === weights.length - 1 ? colors.forestMid : colors.accent,
                   },
                 ]}
               />
             </View>
-          ))}
+          ); }) : <Text style={[styles.chartEmpty, { color: colors.mutedForeground }]}>Add assessments to see your trend.</Text>}
         </View>
         <View style={[styles.progressDivider, { backgroundColor: colors.border }]} />
         <View style={styles.progressFooter}>
-          <Text style={[styles.progressFooterText, { color: colors.mutedForeground }]}>BENCH PRESS</Text>
-          <Text style={[styles.progressFooterValue, { color: colors.foreground }]}>52.5 kg <Text style={{ color: colors.accentForeground }}>↑ 2.5 kg</Text></Text>
+          <Text style={[styles.progressFooterText, { color: colors.mutedForeground }]}>GYM VISITS</Text>
+          <Text style={[styles.progressFooterValue, { color: colors.foreground }]}>
+            {profile?.checkInsThisMonth ?? 0} this month
+          </Text>
         </View>
       </View>
       <View style={{ height: 112 }} />
@@ -356,6 +388,7 @@ const styles = StyleSheet.create({
   cardFootnote: { fontSize: 9, lineHeight: 14, marginTop: 5, maxWidth: 115 },
   visitCount: { marginLeft: 'auto', fontSize: 14, fontWeight: '700' },
   visitTarget: { fontSize: 11, fontWeight: '500' },
+  monthVisits: { marginTop: 14 },
   weekDots: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 17 },
   dayColumn: { alignItems: 'center', gap: 6 },
   dayDot: { width: 20, height: 20, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
@@ -390,6 +423,7 @@ const styles = StyleSheet.create({
   progressLabel: { fontSize: 11, marginTop: -1 },
   progressNote: { fontSize: 10, fontWeight: '600', marginTop: 7 },
   chart: { height: 77, flexDirection: 'row', alignItems: 'flex-end', gap: 7, paddingBottom: 1 },
+  chartEmpty: { fontSize: 9, marginTop: 17 },
   chartBarWrap: { flex: 1, height: '100%', justifyContent: 'flex-end', alignItems: 'center' },
   chartBar: { width: '100%', borderRadius: 4 },
   progressDivider: { height: 1, marginTop: 14, marginBottom: 12 },

@@ -1,16 +1,15 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Feather } from '@expo/vector-icons';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
+import { useQuery } from '@tanstack/react-query';
 import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColors } from '@/hooks/useColors';
+import { formatMemberApiError, MemberProgress } from '@/lib/member-api';
+import { useMemberApi } from '@/lib/useMemberApi';
 
 type Range = '3M' | '6M' | '1Y';
-const series: Record<Range, { labels: string[]; values: number[]; change: string }> = {
-  '3M': { labels: ['SEP', 'OCT', 'NOV'], values: [78.2, 77.4, 76.8], change: '−1.4 kg' },
-  '6M': { labels: ['JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV'], values: [78.6, 78.1, 77.8, 77.4, 77.1, 76.8], change: '−1.8 kg' },
-  '1Y': { labels: ['DEC', 'FEB', 'APR', 'JUN', 'AUG', 'OCT', 'NOV'], values: [80.2, 79.7, 79.1, 78.6, 77.8, 77.1, 76.8], change: '−3.4 kg' },
-};
+type Assessment = MemberProgress['assessments'][number];
 
 function chartPath(values: number[]) {
   const left = 20;
@@ -30,14 +29,70 @@ function chartPath(values: number[]) {
   };
 }
 
+function shortDate(value: string) {
+  return new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Africa/Nairobi',
+    month: 'short',
+  }).format(new Date(value)).toUpperCase();
+}
+
+function measurementChange(current: number | null, previous: number | null, unit: string) {
+  if (current == null || previous == null) return '—';
+  const difference = current - previous;
+  if (difference === 0) return `No change`;
+  const sign = difference > 0 ? '+' : '−';
+  return `${sign}${Math.abs(difference).toFixed(1)}${unit}`;
+}
+
 export default function ProgressScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const api = useMemberApi();
   const topInset = Platform.OS === 'web' ? 67 : insets.top;
   const [range, setRange] = useState<Range>('6M');
-  const active = series[range];
-  const chart = chartPath(active.values);
-  const currentWeight = active.values[active.values.length - 1].toFixed(1);
+  const progressQuery = useQuery({
+    queryKey: ['member', 'progress'],
+    queryFn: () => api<MemberProgress>('/member/progress'),
+  });
+  const progress = progressQuery.data;
+  const assessments = progress?.assessments ?? [];
+  const daysBack = range === '3M' ? 92 : range === '6M' ? 183 : 366;
+  const cutoff = Date.now() - daysBack * 24 * 60 * 60 * 1000;
+  const weightAssessments = useMemo(
+    () =>
+      assessments
+        .filter((item) => item.weightKg != null && new Date(item.recordedAt).getTime() >= cutoff)
+        .slice()
+        .reverse(),
+    [assessments, cutoff],
+  );
+  const values = weightAssessments.map((item) => item.weightKg as number);
+  const chart = values.length ? chartPath(values) : null;
+  const current = assessments[0] ?? null;
+  const previous = assessments[1] ?? null;
+  const weightChange = measurementChange(current?.weightKg ?? null, previous?.weightKg ?? null, ' kg');
+  const latestDate = current
+    ? new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Nairobi', day: 'numeric', month: 'short', year: 'numeric' })
+        .format(new Date(current.recordedAt))
+        .toUpperCase()
+    : 'NO ASSESSMENT YET';
+
+  const rows: { label: string; value: number | null | undefined; unit: string; digits?: number }[] = [
+    { label: 'Body weight', value: current?.weightKg, unit: ' kg', digits: 1 },
+    { label: 'Height', value: current?.heightCm, unit: ' cm', digits: 1 },
+    { label: 'BMI', value: current?.bmi, unit: '', digits: 1 },
+    { label: 'Body fat', value: current?.bodyFatPercent, unit: '%', digits: 1 },
+    { label: 'Muscle', value: current?.musclePercent, unit: '%', digits: 1 },
+    { label: 'Visceral fat', value: current?.visceralFatLevel, unit: '', digits: 1 },
+  ];
+  const previousValues: Record<string, number | null | undefined> = {
+    'Body weight': previous?.weightKg,
+    Height: previous?.heightCm,
+    BMI: previous?.bmi,
+    'Body fat': previous?.bodyFatPercent,
+    Muscle: previous?.musclePercent,
+    'Visceral fat': previous?.visceralFatLevel,
+  };
 
   return (
     <ScrollView
@@ -47,38 +102,33 @@ export default function ProgressScreen() {
     >
       <Text style={[styles.eyebrow, { color: colors.accentForeground }]}>SMALL WINS ADD UP</Text>
       <Text style={[styles.title, { color: colors.foreground }]}>Progress</Text>
-      <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>A steady look at where your effort is taking you.</Text>
+      <Text style={[styles.subtitle, { color: colors.mutedForeground }]}>
+        Your recorded check-ins and assessment history.
+      </Text>
 
       <View style={[styles.summaryCard, { backgroundColor: colors.forestDeep }]}>
         <View style={styles.summaryTop}>
           <View style={styles.summaryCopy}>
-            <Text style={[styles.summaryOverline, { color: colors.forestCaption }]}>YOUR RHYTHM</Text>
-            <Text style={[styles.summaryTitle, { color: colors.forestText }]}>You’re showing up.</Text>
-            <Text style={[styles.summarySub, { color: colors.forestMuted }]}>A little consistency goes a long way.</Text>
+            <Text style={[styles.summaryOverline, { color: colors.forestCaption }]}>THIS MONTH</Text>
+            <Text style={[styles.summaryTitle, { color: colors.forestText }]}>Keep building your rhythm.</Text>
+            <Text style={[styles.summarySub, { color: colors.forestMuted }]}>
+              Counts reflect records in your MyGym account.
+            </Text>
           </View>
           <View
             testID="monthly-visits-ring"
             accessible
             accessibilityRole="image"
-            accessibilityLabel="12 of 16 monthly visits completed"
+            accessibilityLabel={`${progress?.checkInsThisMonth ?? 0} gym visits recorded this month`}
             style={styles.ringWrap}
           >
             <Svg width={88} height={88} viewBox="0 0 88 88">
               <Circle cx="44" cy="44" r="35" fill="none" stroke={colors.forestRing} strokeWidth="7" />
-              <Circle
-                cx="44"
-                cy="44"
-                r="35"
-                fill="none"
-                stroke={colors.forestMid}
-                strokeWidth="7"
-                strokeLinecap="round"
-                strokeDasharray="165 220"
-              />
+              <Circle cx="44" cy="44" r="35" fill="none" stroke={colors.forestMid} strokeWidth="7" />
             </Svg>
             <View style={styles.ringCenter}>
-              <Text style={[styles.ringNumber, { color: colors.forestText }]}>12</Text>
-              <Text style={[styles.ringCaption, { color: colors.forestCaption }]}>OF 16</Text>
+              <Text style={[styles.ringNumber, { color: colors.forestText }]}>{progress?.checkInsThisMonth ?? 0}</Text>
+              <Text style={[styles.ringCaption, { color: colors.forestCaption }]}>VISITS</Text>
             </View>
           </View>
         </View>
@@ -86,12 +136,18 @@ export default function ProgressScreen() {
         <View style={styles.summaryStats}>
           <View style={styles.summaryStat}>
             <Text style={[styles.summaryStatLabel, { color: colors.forestCaption }]}>BODY WEIGHT</Text>
-            <Text style={[styles.summaryStatValue, { color: colors.forestText }]}>76.8 <Text style={[styles.summaryUnit, { color: colors.forestMuted }]}>kg</Text></Text>
+            <Text style={[styles.summaryStatValue, { color: colors.forestText }]}>
+              {current?.weightKg == null ? '—' : current.weightKg.toFixed(1)}
+              {current?.weightKg != null ? <Text style={[styles.summaryUnit, { color: colors.forestMuted }]}> kg</Text> : null}
+            </Text>
           </View>
           <View style={[styles.summaryStatDivider, { backgroundColor: colors.forestLine }]} />
           <View style={styles.summaryStat}>
-            <Text style={[styles.summaryStatLabel, { color: colors.forestCaption }]}>STRENGTH THIS MONTH</Text>
-            <Text style={[styles.summaryStatValue, { color: colors.forestMid }]}>+8.4<Text style={[styles.summaryUnit, { color: colors.forestMid }]}>%</Text></Text>
+            <Text style={[styles.summaryStatLabel, { color: colors.forestCaption }]}>WORKOUTS</Text>
+            <Text style={[styles.summaryStatValue, { color: colors.forestMid }]}>
+              {progress?.workoutsThisMonth ?? 0}
+              <Text style={[styles.summaryUnit, { color: colors.forestMid }]}> this month</Text>
+            </Text>
           </View>
         </View>
       </View>
@@ -101,13 +157,17 @@ export default function ProgressScreen() {
           <View>
             <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>BODY WEIGHT</Text>
             <View style={styles.weightLine}>
-              <Text style={[styles.weightNumber, { color: colors.foreground }]}>{currentWeight}</Text>
-              <Text style={[styles.weightUnit, { color: colors.mutedForeground }]}>kg</Text>
+              <Text style={[styles.weightNumber, { color: colors.foreground }]}>
+                {current?.weightKg == null ? '—' : current.weightKg.toFixed(1)}
+              </Text>
+              <Text style={[styles.weightUnit, { color: colors.mutedForeground }]}>
+                {current?.weightKg == null ? '' : 'kg'}
+              </Text>
             </View>
           </View>
           <View style={[styles.changePill, { backgroundColor: colors.accent }]}>
-            <Feather name="trending-down" size={13} color={colors.primary} />
-            <Text style={[styles.changeText, { color: colors.primary }]}>{active.change}</Text>
+            <Feather name="activity" size={13} color={colors.primary} />
+            <Text style={[styles.changeText, { color: colors.primary }]}>{weightChange}</Text>
           </View>
         </View>
         <View style={[styles.rangeSwitch, { backgroundColor: colors.background }]}>
@@ -129,51 +189,91 @@ export default function ProgressScreen() {
             </Pressable>
           ))}
         </View>
-        <View
-          testID="body-weight-chart"
-          accessible
-          accessibilityRole="image"
-          accessibilityLabel={`Body weight trend from ${active.values[0].toFixed(1)} kilograms to ${currentWeight} kilograms over ${range}. Change ${active.change}.`}
-          style={styles.chartWrap}
-        >
-          <Svg width="100%" height={190} viewBox="0 0 320 190" preserveAspectRatio="none">
-            <Line x1="20" y1="55" x2="300" y2="55" stroke={colors.border} strokeWidth="1" strokeDasharray="3 5" />
-            <Line x1="20" y1="105" x2="300" y2="105" stroke={colors.border} strokeWidth="1" strokeDasharray="3 5" />
-            <Path d={chart.area} fill={colors.accent} fillOpacity={0.42} />
-            <Path d={chart.path} fill="none" stroke={colors.forestMid} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-            {chart.points.map((point, index) => (
-              <Circle key={index} cx={point.x} cy={point.y} r={index === chart.points.length - 1 ? 5 : 3} fill={index === chart.points.length - 1 ? colors.forestMid : colors.card} stroke={colors.forestMid} strokeWidth="2" />
-            ))}
-          </Svg>
-          <View style={styles.chartLabels}>
-            {active.labels.map((label) => <Text key={label} style={[styles.chartLabel, { color: colors.mutedForeground }]}>{label}</Text>)}
+        {progressQuery.isPending ? (
+          <Text style={[styles.emptyChart, { color: colors.mutedForeground }]}>Loading your assessment history…</Text>
+        ) : chart && values.length >= 2 ? (
+          <View
+            testID="body-weight-chart"
+            accessible
+            accessibilityRole="image"
+            accessibilityLabel={`Recorded weight from ${values[0].toFixed(1)} to ${values[values.length - 1].toFixed(1)} kilograms over ${range}`}
+            style={styles.chartWrap}
+          >
+            <Svg width="100%" height={190} viewBox="0 0 320 190" preserveAspectRatio="none">
+              <Line x1="20" y1="55" x2="300" y2="55" stroke={colors.border} strokeWidth="1" strokeDasharray="3 5" />
+              <Line x1="20" y1="105" x2="300" y2="105" stroke={colors.border} strokeWidth="1" strokeDasharray="3 5" />
+              <Path d={chart.area} fill={colors.accent} fillOpacity={0.42} />
+              <Path d={chart.path} fill="none" stroke={colors.forestMid} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+              {chart.points.map((point, index) => (
+                <Circle key={weightAssessments[index].id} cx={point.x} cy={point.y} r={index === chart.points.length - 1 ? 5 : 3} fill={index === chart.points.length - 1 ? colors.forestMid : colors.card} stroke={colors.forestMid} strokeWidth="2" />
+              ))}
+            </Svg>
+            <View style={styles.chartLabels}>
+              {weightAssessments.map((item) => (
+                <Text key={item.id} style={[styles.chartLabel, { color: colors.mutedForeground }]}>
+                  {shortDate(item.recordedAt)}
+                </Text>
+              ))}
+            </View>
           </View>
-        </View>
+        ) : (
+          <Text style={[styles.emptyChart, { color: colors.mutedForeground }]}>
+            {values.length === 1
+              ? `One weight recorded: ${values[0].toFixed(1)} kg. Add another assessment to see a trend.`
+              : 'No body-weight assessments in this range yet.'}
+          </Text>
+        )}
         <View style={[styles.chartFooter, { borderTopColor: colors.border }]}>
           <View style={[styles.chartLegendDot, { backgroundColor: colors.forestMid }]} />
-          <Text style={[styles.chartLegendText, { color: colors.mutedForeground }]}>MONTHLY CHECK-IN</Text>
-          <Text style={[styles.updatedText, { color: colors.mutedForeground }]}>Updated 16 Nov</Text>
+          <Text style={[styles.chartLegendText, { color: colors.mutedForeground }]}>RECORDED ASSESSMENTS</Text>
+          <Text style={[styles.updatedText, { color: colors.mutedForeground }]}>{latestDate}</Text>
         </View>
       </View>
 
       <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Measurements</Text>
-        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>16 NOV 2026</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Latest measurements</Text>
+        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>{latestDate}</Text>
       </View>
-      <View style={[styles.measureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <MeasurementRow label="Waist" value="82.0 cm" change="−3.0 cm" colors={colors} />
-        <MeasurementRow label="Chest" value="98.5 cm" change="+1.2 cm" positive colors={colors} />
-        <MeasurementRow label="Body fat" value="19.6%" change="−1.4%" colors={colors} last />
-      </View>
+      {current ? (
+        <View style={[styles.measureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          {rows.filter((row) => row.value != null).map((row, index, visibleRows) => {
+            const value = row.value as number;
+            const change = measurementChange(
+              value,
+              previousValues[row.label] == null ? null : previousValues[row.label] as number,
+              row.unit,
+            );
+            return (
+              <MeasurementRow
+                key={row.label}
+                label={row.label}
+                value={`${value.toFixed(row.digits ?? 1)}${row.unit}`}
+                change={change}
+                last={index === visibleRows.length - 1}
+                colors={colors}
+              />
+            );
+          })}
+        </View>
+      ) : (
+        <View style={[styles.emptyMeasurements, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="clipboard" size={17} color={colors.primary} />
+          <Text style={[styles.emptyChart, { color: colors.mutedForeground }]}>
+            {progressQuery.error
+              ? formatMemberApiError(progressQuery.error)
+              : 'Your trainer’s assessments will appear here.'}
+          </Text>
+        </View>
+      )}
 
       <View style={styles.sectionHeading}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Milestones</Text>
-        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>3 EARNED</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>This month</Text>
+        <Text style={[styles.sectionAside, { color: colors.mutedForeground }]}>FROM YOUR RECORDS</Text>
       </View>
       <View style={styles.milestoneGrid}>
-        <Milestone icon="calendar" title="First month" detail="12 visits completed" accent="green" colors={colors} />
-        <Milestone icon="award" title="Six-week streak" detail="Consistency champion" accent="gold" colors={colors} />
-        <Milestone icon="trending-down" title="New rhythm" detail="3 kg body-weight change" accent="green" colors={colors} />
+        <Milestone icon="calendar" title="Gym visits" detail={`${progress?.checkInsThisMonth ?? 0} recorded`} accent="green" colors={colors} />
+        <Milestone icon="activity" title="Completed workouts" detail={`${progress?.workoutsThisMonth ?? 0} recorded`} accent="gold" colors={colors} />
+        <Milestone icon="clipboard" title="Assessments" detail={`${assessments.length} on file`} accent="green" colors={colors} />
       </View>
       <View style={styles.privateNote}>
         <Feather name="lock" size={13} color={colors.mutedForeground} />
@@ -184,11 +284,10 @@ export default function ProgressScreen() {
   );
 }
 
-function MeasurementRow({ label, value, change, positive = false, last = false, colors }: {
+function MeasurementRow({ label, value, change, last = false, colors }: {
   label: string;
   value: string;
   change: string;
-  positive?: boolean;
   last?: boolean;
   colors: ReturnType<typeof useColors>;
 }) {
@@ -196,15 +295,15 @@ function MeasurementRow({ label, value, change, positive = false, last = false, 
     <View style={[styles.measureRow, !last && { borderBottomWidth: 1, borderBottomColor: colors.border }]}>
       <Text style={[styles.measureName, { color: colors.foreground }]}>{label}</Text>
       <Text style={[styles.measureValue, { color: colors.foreground }]}>{value}</Text>
-      <View style={[styles.measureChange, { backgroundColor: positive ? colors.accent : colors.warm }]}>
-        <Text style={[styles.measureChangeText, { color: positive ? colors.primary : colors.gold }]}>{change}</Text>
+      <View style={[styles.measureChange, { backgroundColor: colors.accent }]}>
+        <Text style={[styles.measureChangeText, { color: colors.primary }]}>{change}</Text>
       </View>
     </View>
   );
 }
 
 function Milestone({ icon, title, detail, accent, colors }: {
-  icon: 'calendar' | 'award' | 'trending-down';
+  icon: 'calendar' | 'activity' | 'clipboard';
   title: string;
   detail: string;
   accent: 'green' | 'gold';
@@ -260,6 +359,7 @@ const styles = StyleSheet.create({
   chartWrap: { marginTop: 12, width: '100%' },
   chartLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: -1, paddingHorizontal: 1 },
   chartLabel: { fontSize: 8, fontWeight: '700', letterSpacing: 0.5 },
+  emptyChart: { fontSize: 10, lineHeight: 16, marginTop: 20 },
   chartFooter: { flexDirection: 'row', alignItems: 'center', gap: 6, borderTopWidth: 1, paddingTop: 12, marginTop: 13 },
   chartLegendDot: { width: 6, height: 6, borderRadius: 3 },
   chartLegendText: { fontSize: 8, fontWeight: '700', letterSpacing: 0.7 },
@@ -273,11 +373,12 @@ const styles = StyleSheet.create({
   measureValue: { fontSize: 11, fontWeight: '700', minWidth: 57, textAlign: 'right' },
   measureChange: { borderRadius: 9, paddingHorizontal: 7, paddingVertical: 5, minWidth: 60, alignItems: 'center' },
   measureChangeText: { fontSize: 9, fontWeight: '700' },
+  emptyMeasurements: { borderWidth: 1, borderRadius: 19, padding: 15, flexDirection: 'row', alignItems: 'center', gap: 10 },
   milestoneGrid: { gap: 9 },
   milestoneCard: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 17, minHeight: 66, paddingHorizontal: 13, gap: 11 },
   milestoneIcon: { width: 36, height: 36, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
   milestoneTitle: { fontSize: 11, fontWeight: '700', flex: 1 },
   milestoneDetail: { fontSize: 9, textAlign: 'right', maxWidth: 120 },
-  privateNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 19 },
+  privateNote: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 18 },
   privateText: { fontSize: 9 },
 });
